@@ -9,6 +9,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "./interfaces/IBeraPawForge.sol";
+import "./interfaces/IRewardVault.sol";
 
 interface IRandomGenerator {
     function getRandomNumber() external returns (uint256);
@@ -34,6 +36,20 @@ contract EdenLottery is
         bool isActive;
     }
 
+    struct LotteryConfig {
+        address rewardToken;
+        uint256 entryFee;
+        uint256 refundRate;
+        uint256 minPoolBalance;
+        address randomGenerator;
+    }
+
+    struct RewardConfig {
+        address operatorAddress;
+        address rewardVault;
+        address stakingToken;
+    }
+
     // 状态变量
     mapping(uint256 => Prize) public prizes;
     uint256 public prizeCount;
@@ -43,6 +59,11 @@ contract EdenLottery is
     address public rewardToken;
     uint256 public minPoolBalance;
     IRandomGenerator public randomGenerator;
+
+    // rewardValut相关配置信息  
+    address public operatorAddress;
+    address public rewardVault;
+    address public stakingToken;
 
     // 事件
     event PrizeAdded(uint256 indexed prizeId, string name, uint256 tokenValue, uint256 weight);
@@ -54,6 +75,7 @@ contract EdenLottery is
     event RefundRateUpdated(uint256 oldRate, uint256 newRate);
     event MinPoolBalanceUpdated(uint256 oldBalance, uint256 newBalance);
     event RandomGeneratorUpdated(address oldGenerator, address newGenerator);
+    event RewardConfigUpdated(address operatorAddress, address rewardVault, address stakingToken);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -61,11 +83,8 @@ contract EdenLottery is
     }
 
     function initialize(
-        address _rewardToken,
-        uint256 _entryFee,
-        uint256 _refundRate,
-        uint256 _minPoolBalance,
-        address _randomGenerator
+        LotteryConfig memory _lotteryConfig,
+        RewardConfig memory _rewardConfig
     ) public initializer {
         __AccessControl_init();
         __Pausable_init();
@@ -75,11 +94,17 @@ contract EdenLottery is
         _grantRole(ADMIN_ROLE, msg.sender);
         _grantRole(UPGRADER_ROLE, msg.sender);
 
-        rewardToken = _rewardToken;
-        entryFee = _entryFee;
-        refundRate = _refundRate;
-        minPoolBalance = _minPoolBalance;
-        randomGenerator = IRandomGenerator(_randomGenerator);
+        // 设置抽奖配置
+        rewardToken = _lotteryConfig.rewardToken;
+        entryFee = _lotteryConfig.entryFee;
+        refundRate = _lotteryConfig.refundRate;
+        minPoolBalance = _lotteryConfig.minPoolBalance;
+        randomGenerator = IRandomGenerator(_lotteryConfig.randomGenerator);
+
+        // 设置奖励配置
+        operatorAddress = _rewardConfig.operatorAddress;
+        rewardVault = _rewardConfig.rewardVault;
+        stakingToken = _rewardConfig.stakingToken;
     }
 
     // 奖品管理函数
@@ -135,6 +160,9 @@ contract EdenLottery is
     // 抽奖函数
     function lottery() external nonReentrant whenNotPaused {
         require(address(randomGenerator) != address(0), "Random generator not set");
+
+        _beforeLottery();
+
         require(IERC20(rewardToken).balanceOf(address(this)) >= minPoolBalance, "Insufficient pool balance");
 
         // 转移抽奖费用
@@ -216,6 +244,44 @@ contract EdenLottery is
 
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
+    }
+
+    function stakeAndSetupOperator() external onlyRole(ADMIN_ROLE) {
+        
+        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(address(this));
+        require(stakingTokenBalance > 0, "No staking token balance");
+        // approve staking token to rewardVault
+        IERC20(stakingToken).approve(rewardVault, stakingTokenBalance);
+
+        // stake token into rewardVault
+        IRewardVault(rewardVault).stake(stakingTokenBalance);
+
+        // set operatorAddress
+        IRewardVault(rewardVault).setOperator(operatorAddress);
+    }
+
+    function unStake() external onlyRole(ADMIN_ROLE) {
+        uint256 balance = IRewardVault(rewardVault).balanceOf(address(this));
+        require(balance > 0, "No balance to unstake");
+
+        IRewardVault(rewardVault).withdraw(balance);
+
+        // get stakingToken balance
+        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(address(this));
+
+        // transfer stakingToken to msg.sender
+        bool success = IERC20(stakingToken).transfer(msg.sender, stakingTokenBalance);
+        require(success, "Staking token transfer failed");
+    }
+
+    // 使用前需要claimLbgt
+    function _beforeLottery() internal {
+        // claim lbgt
+        IBeraPawForge(operatorAddress).mint(
+            address(this),
+            rewardVault,
+            address(this)
+        );
     }
 
     // UUPS升级相关
