@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 interface IRandomGenerator {
     function getRandomNumber() external returns (uint256);
@@ -16,13 +16,12 @@ interface IRandomGenerator {
 
 contract EdenLottery is 
     Initializable, 
-    AccessControl, 
-    Pausable, 
-    ReentrancyGuard, 
+    AccessControlUpgradeable, 
+    PausableUpgradeable, 
+    ReentrancyGuardUpgradeable, 
     UUPSUpgradeable 
 {
     using SafeERC20 for IERC20;
-    using SafeMath for uint256;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
@@ -94,7 +93,7 @@ contract EdenLottery is
         require(feeAddress != address(0), "Invalid fee address");
         
         prizes[prizeCount] = Prize(name, feeAddress, tokenValue, weight, true);
-        totalWeight = totalWeight.add(weight);
+        totalWeight = totalWeight + weight;
         
         emit PrizeAdded(prizeCount, name, tokenValue, weight);
         prizeCount++;
@@ -112,7 +111,7 @@ contract EdenLottery is
         require(feeAddress != address(0), "Invalid fee address");
 
         Prize storage prize = prizes[prizeId];
-        totalWeight = totalWeight.sub(prize.weight).add(weight);
+        totalWeight = totalWeight - prize.weight + weight;
         
         prize.name = name;
         prize.feeAddress = feeAddress;
@@ -127,7 +126,7 @@ contract EdenLottery is
         Prize storage prize = prizes[prizeId];
         require(prize.isActive, "Prize already removed");
 
-        totalWeight = totalWeight.sub(prize.weight);
+        totalWeight = totalWeight - prize.weight;
         prize.isActive = false;
 
         emit PrizeRemoved(prizeId);
@@ -147,7 +146,7 @@ contract EdenLottery is
 
         if (prizeId == type(uint256).max) {
             // 未中奖，返还代币
-            uint256 refundAmount = entryFee.mul(refundRate).div(100);
+            uint256 refundAmount = entryFee * refundRate / 100;
             IERC20(rewardToken).safeTransfer(msg.sender, refundAmount);
             emit LotteryResult(msg.sender, prizeId, false, refundAmount);
         } else {
@@ -163,7 +162,7 @@ contract EdenLottery is
         uint256 accumulatedWeight = 0;
         for (uint256 i = 0; i < prizeCount; i++) {
             if (!prizes[i].isActive) continue;
-            accumulatedWeight = accumulatedWeight.add(prizes[i].weight);
+            accumulatedWeight = accumulatedWeight + prizes[i].weight;
             if (randomNumber < accumulatedWeight) {
                 return i;
             }
