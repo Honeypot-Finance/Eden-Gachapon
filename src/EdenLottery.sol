@@ -38,10 +38,14 @@ contract EdenLottery is
 
     struct LotteryConfig {
         address rewardToken;
-        uint256 entryFee;
-        uint256 refundRate;
         uint256 minPoolBalance;
         address randomGenerator;
+    }
+
+    struct EntryFeeConfig {
+        address token;
+        uint256 amount;
+        uint256 refundRate;
     }
 
     struct RewardConfig {
@@ -54,8 +58,7 @@ contract EdenLottery is
     mapping(uint256 => Prize) public prizes;
     uint256 public prizeCount;
     uint256 public totalWeight;
-    uint256 public entryFee;
-    uint256 public refundRate;
+    EntryFeeConfig public entryFeeConfig;
     address public rewardToken;
     uint256 public minPoolBalance;
     IRandomGenerator public randomGenerator;
@@ -71,8 +74,7 @@ contract EdenLottery is
     event PrizeUpdated(uint256 indexed prizeId, string name, uint256 tokenValue, uint256 weight);
     event LotteryResult(address indexed user, uint256 prizeId, bool won, uint256 amount);
     event TokenAddressUpdated(address oldAddress, address newAddress);
-    event EntryFeeUpdated(uint256 oldFee, uint256 newFee);
-    event RefundRateUpdated(uint256 oldRate, uint256 newRate);
+    event EntryFeeConfigUpdated(address token, uint256 amount, uint256 refundRate);
     event MinPoolBalanceUpdated(uint256 oldBalance, uint256 newBalance);
     event RandomGeneratorUpdated(address oldGenerator, address newGenerator);
     event RewardConfigUpdated(address operatorAddress, address rewardVault, address stakingToken);
@@ -84,6 +86,7 @@ contract EdenLottery is
 
     function initialize(
         LotteryConfig memory _lotteryConfig,
+        EntryFeeConfig memory _entryFeeConfig,
         RewardConfig memory _rewardConfig
     ) public initializer {
         __AccessControl_init();
@@ -96,10 +99,14 @@ contract EdenLottery is
 
         // 设置抽奖配置
         rewardToken = _lotteryConfig.rewardToken;
-        entryFee = _lotteryConfig.entryFee;
-        refundRate = _lotteryConfig.refundRate;
         minPoolBalance = _lotteryConfig.minPoolBalance;
         randomGenerator = IRandomGenerator(_lotteryConfig.randomGenerator);
+
+        // 设置入场费配置
+        require(_entryFeeConfig.token != address(0), "Invalid entry fee token");
+        require(_entryFeeConfig.amount > 0, "Entry fee must be greater than 0");
+        require(_entryFeeConfig.refundRate <= 100, "Refund rate must be <= 100");
+        entryFeeConfig = _entryFeeConfig;
 
         // 设置奖励配置
         operatorAddress = _rewardConfig.operatorAddress;
@@ -166,7 +173,7 @@ contract EdenLottery is
         require(IERC20(rewardToken).balanceOf(address(this)) >= minPoolBalance, "Insufficient pool balance");
 
         // 转移抽奖费用
-        IERC20(rewardToken).safeTransferFrom(msg.sender, address(this), entryFee);
+        IERC20(entryFeeConfig.token).safeTransferFrom(msg.sender, address(this), entryFeeConfig.amount);
 
         // 获取随机数并选择奖品
         uint256 randomNumber = randomGenerator.getRandomNumber();
@@ -174,8 +181,8 @@ contract EdenLottery is
 
         if (prizeId == type(uint256).max) {
             // 未中奖，返还代币
-            uint256 refundAmount = entryFee * refundRate / 100;
-            IERC20(rewardToken).safeTransfer(msg.sender, refundAmount);
+            uint256 refundAmount = entryFeeConfig.amount * entryFeeConfig.refundRate / 100;
+            IERC20(entryFeeConfig.token).safeTransfer(msg.sender, refundAmount);
             emit LotteryResult(msg.sender, prizeId, false, refundAmount);
         } else {
             // 中奖，发送奖品
@@ -206,18 +213,19 @@ contract EdenLottery is
         emit RandomGeneratorUpdated(oldGenerator, _randomGenerator);
     }
 
-    function setEntryFee(uint256 _entryFee) external onlyRole(ADMIN_ROLE) {
-        require(_entryFee > 0, "Fee must be greater than 0");
-        uint256 oldFee = entryFee;
-        entryFee = _entryFee;
-        emit EntryFeeUpdated(oldFee, _entryFee);
-    }
-
-    function setRefundRate(uint256 _refundRate) external onlyRole(ADMIN_ROLE) {
-        require(_refundRate <= 100, "Refund rate must be <= 100");
-        uint256 oldRate = refundRate;
-        refundRate = _refundRate;
-        emit RefundRateUpdated(oldRate, _refundRate);
+    function setEntryFeeConfig(EntryFeeConfig memory _entryFeeConfig) external onlyRole(ADMIN_ROLE) {
+        require(_entryFeeConfig.token != address(0), "Invalid entry fee token");
+        require(_entryFeeConfig.amount > 0, "Entry fee must be greater than 0");
+        require(_entryFeeConfig.refundRate <= 100, "Refund rate must be <= 100");
+        
+        EntryFeeConfig memory oldConfig = entryFeeConfig;
+        entryFeeConfig = _entryFeeConfig;
+        
+        emit EntryFeeConfigUpdated(
+            _entryFeeConfig.token,
+            _entryFeeConfig.amount,
+            _entryFeeConfig.refundRate
+        );
     }
 
     function setMinPoolBalance(uint256 _minPoolBalance) external onlyRole(ADMIN_ROLE) {
