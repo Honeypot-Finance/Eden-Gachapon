@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -16,12 +15,12 @@ interface IRandomGenerator {
     function getRandomNumber() external returns (uint256);
 }
 
-contract EdenLottery is 
-    Initializable, 
-    AccessControlUpgradeable, 
-    PausableUpgradeable, 
-    ReentrancyGuardUpgradeable, 
-    UUPSUpgradeable 
+contract EdenLottery is
+    Initializable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
 {
     using SafeERC20 for IERC20;
 
@@ -29,55 +28,82 @@ contract EdenLottery is
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     struct Prize {
-        string name;
-        address feeAddress;
-        uint256 tokenValue;
-        uint256 weight;
-        bool isActive;
+        string name; // 奖品名称
+        address feeAddress; // 奖品接收地址
+        uint256 tokenValue; // 奖品价值，LBGT计价
+        uint256 weight; // 奖品权重
+        bool isActive; // 奖品是否有效
     }
 
     struct LotteryConfig {
-        address rewardToken;
+        address rewardToken; // 奖励代币地址 目前默认是LBGT
         uint256 minPoolBalance;
-        address randomGenerator;
+        address randomGenerator; // 随机数生成策略合约
     }
 
     struct EntryFeeConfig {
-        address token;
-        uint256 amount;
-        uint256 refundRate;
+        address token; // 抽奖券支付的代币（目前暂定是wbera）
+        uint256 amount; // 抽奖券价格，默认是0.69wbera
     }
 
     struct RewardConfig {
-        address operatorAddress;
-        address rewardVault;
-        address stakingToken;
+        address operatorAddress; // berapaw的operator地址
+        address rewardVault; // rewardVault地址
+        address stakingToken; // stakingToken地址
     }
+
+    uint256 public constant PRECISION = 10000; // 0.01% 精度
 
     // 状态变量
     mapping(uint256 => Prize) public prizes;
     uint256 public prizeCount;
-    uint256 public totalWeight;
     EntryFeeConfig public entryFeeConfig;
-    address public rewardToken;
+    address public rewardToken; // 奖励代币地址 目前默认是LBGT
     uint256 public minPoolBalance;
     IRandomGenerator public randomGenerator;
-
-    // rewardValut相关配置信息  
+    uint256 public refundRate; // 未中奖返还的抽奖券比例，后续动态更新，精度为0.01%，如7500代表75%
+    mapping(address => uint256) public ticketCount; // 用户抽奖券数量
+    uint256 public totalTicketCount; // 总抽奖券数量
+    // rewardValut相关配置信息
     address public operatorAddress;
     address public rewardVault;
     address public stakingToken;
 
+    // 添加未中奖权重
+    uint256 public totalWeight; // 奖品总权重，不包含未中奖权重
+    uint256 public noPrizeWeight; // 未中奖的权重
+
     // 事件
-    event PrizeAdded(uint256 indexed prizeId, string name, uint256 tokenValue, uint256 weight);
+    event PrizeAdded(
+        uint256 indexed prizeId,
+        string name,
+        uint256 tokenValue,
+        uint256 weight
+    );
     event PrizeRemoved(uint256 indexed prizeId);
-    event PrizeUpdated(uint256 indexed prizeId, string name, uint256 tokenValue, uint256 weight);
-    event LotteryResult(address indexed user, uint256 prizeId, bool won, uint256 amount);
+    event PrizeUpdated(
+        uint256 indexed prizeId,
+        string name,
+        uint256 tokenValue,
+        uint256 weight
+    );
+    event LotteryResult(
+        address indexed user,
+        uint256 prizeId,
+        bool won,
+        uint256 amount
+    );
     event TokenAddressUpdated(address oldAddress, address newAddress);
-    event EntryFeeConfigUpdated(address token, uint256 amount, uint256 refundRate);
+    event EntryFeeConfigUpdated(address token, uint256 amount);
     event MinPoolBalanceUpdated(uint256 oldBalance, uint256 newBalance);
     event RandomGeneratorUpdated(address oldGenerator, address newGenerator);
-    event RewardConfigUpdated(address operatorAddress, address rewardVault, address stakingToken);
+    event RewardConfigUpdated(
+        address operatorAddress,
+        address rewardVault,
+        address stakingToken
+    );
+    event TicketBought(address indexed user, uint256 ticketCount);
+    event TicketUsed(address indexed user, uint256 ticketCount);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -105,7 +131,6 @@ contract EdenLottery is
         // 设置入场费配置
         require(_entryFeeConfig.token != address(0), "Invalid entry fee token");
         require(_entryFeeConfig.amount > 0, "Entry fee must be greater than 0");
-        require(_entryFeeConfig.refundRate <= 100, "Refund rate must be <= 100");
         entryFeeConfig = _entryFeeConfig;
 
         // 设置奖励配置
@@ -114,6 +139,110 @@ contract EdenLottery is
         stakingToken = _rewardConfig.stakingToken;
     }
 
+    // ======user 相关函数 start======
+
+    // 购买奖券
+    function buyTicket() external nonReentrant whenNotPaused {
+        // 转移抽奖费用
+        IERC20(entryFeeConfig.token).safeTransferFrom(
+            msg.sender,
+            address(this),
+            entryFeeConfig.amount
+        );
+
+        // 增加抽奖券数量
+        ticketCount[msg.sender]++;
+        totalTicketCount++;
+        emit TicketBought(msg.sender, ticketCount[msg.sender]);
+    }
+
+    // 查询当前用户抽奖券数量
+    function getTicketCount(address user) external view returns (uint256) {
+        return ticketCount[user];
+    }
+
+    // 抽奖函数
+    function lottery() external nonReentrant whenNotPaused {
+        require(
+            address(randomGenerator) != address(0),
+            "Random generator not set"
+        );
+        require(ticketCount[msg.sender] > 0, "No tickets available");
+        // 需要保证当前已经配置好奖品
+        require(prizeCount > 1, "No prizes available");
+
+        // 扣除抽奖券数量
+        ticketCount[msg.sender]--;
+        totalTicketCount--;
+        emit TicketUsed(msg.sender, ticketCount[msg.sender]);
+
+        // hook操作，claim lbgt
+        _beforeLottery();
+
+        require(
+            IERC20(rewardToken).balanceOf(address(this)) >= minPoolBalance,
+            "Insufficient pool balance"
+        );
+
+        // 获取随机数并选择奖品
+        uint256 randomNumber = randomGenerator.getRandomNumber();
+        uint256 prizeId = _selectPrize(randomNumber);
+
+        if (prizeId == type(uint256).max) {
+            // 未中奖，返还代币
+            uint256 refundAmount = (entryFeeConfig.amount * refundRate) /
+                PRECISION;
+            IERC20(rewardToken).safeTransfer(msg.sender, refundAmount);
+            emit LotteryResult(msg.sender, prizeId, false, refundAmount);
+        } else {
+            // 中奖，发送奖品
+            Prize memory prize = prizes[prizeId];
+            IERC20(rewardToken).safeTransfer(
+                prize.feeAddress,
+                prize.tokenValue
+            );
+            emit LotteryResult(msg.sender, prizeId, true, prize.tokenValue);
+        }
+    }
+
+    // 内部函数
+    function _selectPrize(
+        uint256 randomNumber
+    ) internal view returns (uint256) {
+        // 确保随机数在总权重范围内
+        uint256 boundedRandom = randomNumber % (totalWeight + noPrizeWeight);
+
+        // 如果随机数落在未中奖权重范围内
+        if (boundedRandom < noPrizeWeight) {
+            return type(uint256).max; // 表示未中奖
+        }
+
+        // 否则在奖品中随机选择
+        boundedRandom = boundedRandom - noPrizeWeight;
+
+        uint256 accumulatedWeight = 0;
+        for (uint256 i = 0; i < prizeCount; i++) {
+            if (!prizes[i].isActive) continue;
+            accumulatedWeight = accumulatedWeight + prizes[i].weight;
+            if (boundedRandom < accumulatedWeight) {
+                return i;
+            }
+        }
+        return type(uint256).max; // 表示未中奖
+    }
+
+    // 使用前需要claimLbgt
+    function _beforeLottery() internal {
+        // claim lbgt
+        IBeraPawForge(operatorAddress).mint(
+            address(this),
+            rewardVault,
+            address(this)
+        );
+    }
+    // ======user 相关函数 end======
+
+    // ======admin 相关函数 start======
     // 奖品管理函数
     function addPrize(
         string memory name,
@@ -123,12 +252,20 @@ contract EdenLottery is
     ) external onlyRole(ADMIN_ROLE) {
         require(weight > 0, "Weight must be greater than 0");
         require(feeAddress != address(0), "Invalid fee address");
-        
+        _addPrize(name, feeAddress, tokenValue, weight);
+        _updateRefundRate();
+    }
+
+    function _addPrize(
+        string memory name,
+        address feeAddress,
+        uint256 tokenValue,
+        uint256 weight
+    ) internal {
         prizes[prizeCount] = Prize(name, feeAddress, tokenValue, weight, true);
         totalWeight = totalWeight + weight;
-        
-        emit PrizeAdded(prizeCount, name, tokenValue, weight);
         prizeCount++;
+        emit PrizeAdded(prizeCount, name, tokenValue, weight);
     }
 
     function updatePrize(
@@ -144,11 +281,13 @@ contract EdenLottery is
 
         Prize storage prize = prizes[prizeId];
         totalWeight = totalWeight - prize.weight + weight;
-        
+
         prize.name = name;
         prize.feeAddress = feeAddress;
         prize.tokenValue = tokenValue;
         prize.weight = weight;
+
+        _updateRefundRate();
 
         emit PrizeUpdated(prizeId, name, tokenValue, weight);
     }
@@ -161,80 +300,47 @@ contract EdenLottery is
         totalWeight = totalWeight - prize.weight;
         prize.isActive = false;
 
+        _updateRefundRate();
+
         emit PrizeRemoved(prizeId);
     }
 
-    // 抽奖函数
-    function lottery() external nonReentrant whenNotPaused {
-        require(address(randomGenerator) != address(0), "Random generator not set");
+    function setEntryFeeConfig(
+        EntryFeeConfig memory _entryFeeConfig
+    ) external onlyRole(ADMIN_ROLE) {
+        require(_entryFeeConfig.token != address(0), "Invalid entry fee token");
+        require(_entryFeeConfig.amount > 0, "Entry fee must be greater than 0");
 
-        _beforeLottery();
+        EntryFeeConfig memory oldConfig = entryFeeConfig;
+        entryFeeConfig = _entryFeeConfig;
 
-        require(IERC20(rewardToken).balanceOf(address(this)) >= minPoolBalance, "Insufficient pool balance");
-
-        // 转移抽奖费用
-        IERC20(entryFeeConfig.token).safeTransferFrom(msg.sender, address(this), entryFeeConfig.amount);
-
-        // 获取随机数并选择奖品
-        uint256 randomNumber = randomGenerator.getRandomNumber();
-        uint256 prizeId = _selectPrize(randomNumber);
-
-        if (prizeId == type(uint256).max) {
-            // 未中奖，返还代币
-            uint256 refundAmount = entryFeeConfig.amount * entryFeeConfig.refundRate / 100;
-            IERC20(entryFeeConfig.token).safeTransfer(msg.sender, refundAmount);
-            emit LotteryResult(msg.sender, prizeId, false, refundAmount);
-        } else {
-            // 中奖，发送奖品
-            Prize memory prize = prizes[prizeId];
-            IERC20(rewardToken).safeTransfer(prize.feeAddress, prize.tokenValue);
-            emit LotteryResult(msg.sender, prizeId, true, prize.tokenValue);
-        }
+        emit EntryFeeConfigUpdated(
+            _entryFeeConfig.token,
+            _entryFeeConfig.amount
+        );
     }
 
-    // 内部函数
-    function _selectPrize(uint256 randomNumber) internal view returns (uint256) {
-        uint256 accumulatedWeight = 0;
-        for (uint256 i = 0; i < prizeCount; i++) {
-            if (!prizes[i].isActive) continue;
-            accumulatedWeight = accumulatedWeight + prizes[i].weight;
-            if (randomNumber < accumulatedWeight) {
-                return i;
-            }
-        }
-        return type(uint256).max; // 表示未中奖
+    function setMinPoolBalance(
+        uint256 _minPoolBalance
+    ) external onlyRole(ADMIN_ROLE) {
+        uint256 oldBalance = minPoolBalance;
+        minPoolBalance = _minPoolBalance;
+        emit MinPoolBalanceUpdated(oldBalance, _minPoolBalance);
     }
 
     // 管理函数
-    function setRandomGenerator(address _randomGenerator) external onlyRole(ADMIN_ROLE) {
+    function setRandomGenerator(
+        address _randomGenerator
+    ) external onlyRole(ADMIN_ROLE) {
         require(_randomGenerator != address(0), "Invalid generator address");
         address oldGenerator = address(randomGenerator);
         randomGenerator = IRandomGenerator(_randomGenerator);
         emit RandomGeneratorUpdated(oldGenerator, _randomGenerator);
     }
 
-    function setEntryFeeConfig(EntryFeeConfig memory _entryFeeConfig) external onlyRole(ADMIN_ROLE) {
-        require(_entryFeeConfig.token != address(0), "Invalid entry fee token");
-        require(_entryFeeConfig.amount > 0, "Entry fee must be greater than 0");
-        require(_entryFeeConfig.refundRate <= 100, "Refund rate must be <= 100");
-        
-        EntryFeeConfig memory oldConfig = entryFeeConfig;
-        entryFeeConfig = _entryFeeConfig;
-        
-        emit EntryFeeConfigUpdated(
-            _entryFeeConfig.token,
-            _entryFeeConfig.amount,
-            _entryFeeConfig.refundRate
-        );
-    }
-
-    function setMinPoolBalance(uint256 _minPoolBalance) external onlyRole(ADMIN_ROLE) {
-        uint256 oldBalance = minPoolBalance;
-        minPoolBalance = _minPoolBalance;
-        emit MinPoolBalanceUpdated(oldBalance, _minPoolBalance);
-    }
-
-    function setRewardToken(address _rewardToken) external onlyRole(ADMIN_ROLE) {
+    function setRewardToken(
+        address _rewardToken
+    ) external onlyRole(ADMIN_ROLE) {
         require(_rewardToken != address(0), "Invalid token address");
         address oldToken = rewardToken;
         rewardToken = _rewardToken;
@@ -242,7 +348,10 @@ contract EdenLottery is
     }
 
     // 紧急函数
-    function emergencyWithdraw(address token, uint256 amount) external onlyRole(ADMIN_ROLE) {
+    function emergencyWithdraw(
+        address token,
+        uint256 amount
+    ) external onlyRole(ADMIN_ROLE) {
         IERC20(token).safeTransfer(msg.sender, amount);
     }
 
@@ -255,8 +364,9 @@ contract EdenLottery is
     }
 
     function stakeAndSetupOperator() external onlyRole(ADMIN_ROLE) {
-        
-        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(address(this));
+        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(
+            address(this)
+        );
         require(stakingTokenBalance > 0, "No staking token balance");
         // approve staking token to rewardVault
         IERC20(stakingToken).approve(rewardVault, stakingTokenBalance);
@@ -275,23 +385,59 @@ contract EdenLottery is
         IRewardVault(rewardVault).withdraw(balance);
 
         // get stakingToken balance
-        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(address(this));
+        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(
+            address(this)
+        );
 
         // transfer stakingToken to msg.sender
-        bool success = IERC20(stakingToken).transfer(msg.sender, stakingTokenBalance);
+        bool success = IERC20(stakingToken).transfer(
+            msg.sender,
+            stakingTokenBalance
+        );
         require(success, "Staking token transfer failed");
     }
 
-    // 使用前需要claimLbgt
-    function _beforeLottery() internal {
-        // claim lbgt
-        IBeraPawForge(operatorAddress).mint(
-            address(this),
-            rewardVault,
-            address(this)
+    // TODO: 需要计算退款率
+    function _updateRefundRate() internal {
+        // （0.69- ∑中奖率*奖品价格）/（1- ∑中奖率）
+        // 计算总中奖率
+        uint256 totalWinRate = 0; // 精度为0.01%
+        uint256 totalPrizeValue = 0;
+        uint256 totalWeightWithoutNoPrize = totalWeight + noPrizeWeight;
+
+        // 遍历所有奖品计算中奖率和奖品价值
+        for (uint256 i = 0; i < prizeCount; i++) {
+            if (!prizes[i].isActive) continue;
+
+            // 计算单个奖品的中奖率 (weight / totalWeightWithoutNoPrize)
+            uint256 winRate = (prizes[i].weight * PRECISION) /
+                totalWeightWithoutNoPrize;
+            totalWinRate += winRate;
+
+            // 计算中奖率 * 奖品价格
+            totalPrizeValue += (winRate * prizes[i].tokenValue) / PRECISION;
+        }
+
+        require(
+            totalPrizeValue < entryFeeConfig.amount,
+            "Total prize value is greater than entry fee"
         );
+
+        // 计算未中奖率
+        uint256 loseRate = PRECISION - totalWinRate;
+        require(loseRate > 0, "No lose rate");
+
+        // 计算退款率
+        // (entry.amount - totalPrizeValue) / loseRate
+        uint256 numerator = entryFeeConfig.amount - totalPrizeValue;
+        refundRate = (numerator * PRECISION) / loseRate;
+
+        // 确保退款率不超过100%
+        require(refundRate <= PRECISION, "Refund rate too high");
     }
 
     // UUPS升级相关
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) {}
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(UPGRADER_ROLE) {}
 }
