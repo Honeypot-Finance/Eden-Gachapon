@@ -50,6 +50,7 @@ contract EdenLottery is
         address operatorAddress; // berapaw的operator地址
         address rewardVault; // rewardVault地址
         address stakingToken; // stakingToken地址
+        uint256 incentiveRate; // 激励比例，使用多少个wbera用来激励BGT，比如 0.7*10**18 代表 0.7Bera Per BGT
     }
 
     uint256 public constant PRECISION = 10000; // 0.01% 精度
@@ -61,13 +62,14 @@ contract EdenLottery is
     address public rewardToken; // 奖励代币地址 目前默认是LBGT
     uint256 public minPoolBalance;
     IRandomGenerator public randomGenerator;
-    uint256 public refundRate; // 未中奖返还的抽奖券比例，后续动态更新，精度为0.01%，如7500代表75%
     mapping(address => uint256) public ticketCount; // 用户抽奖券数量
     uint256 public totalTicketCount; // 总抽奖券数量
+    
     // rewardValut相关配置信息
     address public operatorAddress;
     address public rewardVault;
     address public stakingToken;
+    uint256 public incentiveRate; // 激励比例，使用多少个wbera用来激励BGT，比如 0.7*10**18 代表 0.7Bera Per BGT
 
     // 添加未中奖权重
     uint256 public totalWeight; // 奖品总权重，不包含未中奖权重
@@ -100,7 +102,8 @@ contract EdenLottery is
     event RewardConfigUpdated(
         address operatorAddress,
         address rewardVault,
-        address stakingToken
+        address stakingToken,
+        uint256 incentiveRate
     );
     event TicketBought(address indexed user, uint256 ticketCount);
     event TicketUsed(address indexed user, uint256 ticketCount);
@@ -137,6 +140,7 @@ contract EdenLottery is
         operatorAddress = _rewardConfig.operatorAddress;
         rewardVault = _rewardConfig.rewardVault;
         stakingToken = _rewardConfig.stakingToken;
+        incentiveRate = _rewardConfig.incentiveRate;
     }
 
     // ======user 相关函数 start======
@@ -149,6 +153,9 @@ contract EdenLottery is
             address(this),
             entryFeeConfig.amount
         );
+
+        // 添加incentive
+        _addRewardVaultIncentive(entryFeeConfig.amount);
 
         // 增加抽奖券数量
         ticketCount[msg.sender]++;
@@ -190,9 +197,7 @@ contract EdenLottery is
 
         if (prizeId == type(uint256).max) {
             // 未中奖，返还代币
-            uint256 refundAmount = (entryFeeConfig.amount * refundRate) /
-                PRECISION;
-            IERC20(rewardToken).safeTransfer(msg.sender, refundAmount);
+            uint256 refundAmount = _calculateRefundAmount();
             emit LotteryResult(msg.sender, prizeId, false, refundAmount);
         } else {
             // 中奖，发送奖品
@@ -203,6 +208,49 @@ contract EdenLottery is
             );
             emit LotteryResult(msg.sender, prizeId, true, prize.tokenValue);
         }
+    }
+
+    // 查询当前支持退款的金额
+    function refundAmountAvailable() external view returns (uint256) {
+        return _calculateRefundAmount();
+    }
+
+    function _calculateRefundAmount() internal view returns (uint256) {
+        //（entryFeeConfig.amount - ∑中奖率*奖品价格）/（1- ∑中奖率）
+        // 计算总中奖率
+        uint256 totalWinRate = 0; // 精度为0.01%
+        uint256 totalPrizeValue = 0;
+        uint256 totalWeightWithoutNoPrize = totalWeight + noPrizeWeight;
+
+        // 遍历所有奖品计算中奖率和奖品价值
+        for (uint256 i = 0; i < prizeCount; i++) {
+            if (!prizes[i].isActive) continue;
+
+            // 计算单个奖品的中奖率 (weight / totalWeightWithoutNoPrize)
+            uint256 winRate = (prizes[i].weight * PRECISION) /
+                totalWeightWithoutNoPrize;
+            totalWinRate += winRate;
+
+            // 计算中奖率 * 奖品价格
+            totalPrizeValue += (winRate * prizes[i].tokenValue) / PRECISION;
+        }
+
+        require(
+            totalPrizeValue < entryFeeConfig.amount,
+            "Total prize value is greater than entry fee"
+        );
+
+        // 计算未中奖率
+        uint256 loseRate = PRECISION - totalWinRate;
+        require(loseRate > 0, "No lose rate");
+
+        // 计算退款amount
+        // (entry.amount - totalPrizeValue) / loseRate
+        uint256 numerator = entryFeeConfig.amount - totalPrizeValue;
+
+        uint256 refundAmount = (numerator * PRECISION) / loseRate;
+        require(refundAmount > 0, "Refund amount must be greater than 0");
+        return refundAmount;
     }
 
     // 内部函数
@@ -253,7 +301,6 @@ contract EdenLottery is
         require(weight > 0, "Weight must be greater than 0");
         require(feeAddress != address(0), "Invalid fee address");
         _addPrize(name, feeAddress, tokenValue, weight);
-        _updateRefundRate();
     }
 
     function _addPrize(
@@ -287,8 +334,6 @@ contract EdenLottery is
         prize.tokenValue = tokenValue;
         prize.weight = weight;
 
-        _updateRefundRate();
-
         emit PrizeUpdated(prizeId, name, tokenValue, weight);
     }
 
@@ -299,8 +344,6 @@ contract EdenLottery is
 
         totalWeight = totalWeight - prize.weight;
         prize.isActive = false;
-
-        _updateRefundRate();
 
         emit PrizeRemoved(prizeId);
     }
@@ -317,6 +360,24 @@ contract EdenLottery is
         emit EntryFeeConfigUpdated(
             _entryFeeConfig.token,
             _entryFeeConfig.amount
+        );
+    }
+
+    // 更新RewardConfig
+    function setRewardConfig(
+        RewardConfig memory _rewardConfig
+    ) external onlyRole(ADMIN_ROLE) {
+        require(_rewardConfig.incentiveRate > 0, "Incentive rate must be greater than 0");
+        operatorAddress = _rewardConfig.operatorAddress;
+        rewardVault = _rewardConfig.rewardVault;
+        stakingToken = _rewardConfig.stakingToken;
+        incentiveRate = _rewardConfig.incentiveRate;
+
+        emit RewardConfigUpdated(
+            _rewardConfig.operatorAddress,
+            _rewardConfig.rewardVault,
+            _rewardConfig.stakingToken,
+            _rewardConfig.incentiveRate
         );
     }
 
@@ -397,43 +458,14 @@ contract EdenLottery is
         require(success, "Staking token transfer failed");
     }
 
-    // TODO: 需要计算退款率
-    function _updateRefundRate() internal {
-        // （0.69- ∑中奖率*奖品价格）/（1- ∑中奖率）
-        // 计算总中奖率
-        uint256 totalWinRate = 0; // 精度为0.01%
-        uint256 totalPrizeValue = 0;
-        uint256 totalWeightWithoutNoPrize = totalWeight + noPrizeWeight;
-
-        // 遍历所有奖品计算中奖率和奖品价值
-        for (uint256 i = 0; i < prizeCount; i++) {
-            if (!prizes[i].isActive) continue;
-
-            // 计算单个奖品的中奖率 (weight / totalWeightWithoutNoPrize)
-            uint256 winRate = (prizes[i].weight * PRECISION) /
-                totalWeightWithoutNoPrize;
-            totalWinRate += winRate;
-
-            // 计算中奖率 * 奖品价格
-            totalPrizeValue += (winRate * prizes[i].tokenValue) / PRECISION;
-        }
-
-        require(
-            totalPrizeValue < entryFeeConfig.amount,
-            "Total prize value is greater than entry fee"
+    // TODO: 添加激励
+    function _addRewardVaultIncentive(uint256 amount) internal {
+        // 添加incentive
+        IRewardVault(rewardVault).addIncentive(
+            entryFeeConfig.token,
+            amount,
+            incentiveRate
         );
-
-        // 计算未中奖率
-        uint256 loseRate = PRECISION - totalWinRate;
-        require(loseRate > 0, "No lose rate");
-
-        // 计算退款率
-        // (entry.amount - totalPrizeValue) / loseRate
-        uint256 numerator = entryFeeConfig.amount - totalPrizeValue;
-        refundRate = (numerator * PRECISION) / loseRate;
-
-        // 确保退款率不超过100%
-        require(refundRate <= PRECISION, "Refund rate too high");
     }
 
     // UUPS升级相关
