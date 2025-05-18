@@ -64,7 +64,7 @@ contract EdenLottery is
     IRandomGenerator public randomGenerator;
     mapping(address => uint256) public ticketCount; // 用户抽奖券数量
     uint256 public totalTicketCount; // 总抽奖券数量
-    
+
     // rewardValut相关配置信息
     address public operatorAddress;
     address public rewardVault;
@@ -288,6 +288,7 @@ contract EdenLottery is
             address(this)
         );
     }
+
     // ======user 相关函数 end======
 
     // ======admin 相关函数 start======
@@ -367,7 +368,10 @@ contract EdenLottery is
     function setRewardConfig(
         RewardConfig memory _rewardConfig
     ) external onlyRole(ADMIN_ROLE) {
-        require(_rewardConfig.incentiveRate > 0, "Incentive rate must be greater than 0");
+        require(
+            _rewardConfig.incentiveRate > 0,
+            "Incentive rate must be greater than 0"
+        );
         operatorAddress = _rewardConfig.operatorAddress;
         rewardVault = _rewardConfig.rewardVault;
         stakingToken = _rewardConfig.stakingToken;
@@ -466,6 +470,20 @@ contract EdenLottery is
             amount,
             incentiveRate
         );
+    }
+
+    // withdraw当前合约的token
+    function withdrawToken(
+        address token,
+        uint256 amount
+    ) external onlyRole(ADMIN_ROLE) {
+        require(token != address(0), "Invalid token address");
+        require(amount > 0, "Amount must be greater than 0");
+
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        require(balance >= amount, "Insufficient token balance");
+
+        IERC20(token).safeTransfer(msg.sender, amount);
     }
 
     // UUPS升级相关
