@@ -282,7 +282,7 @@ contract EdenGachapon is
         string memory name,
         uint256 ticketsPerGacha
     ) external onlyRole(ADMIN_ROLE) {
-        require(ticketsPerDraw > 0, "Tickets per draw must be greater than 0");
+        require(ticketsPerGacha > 0, "Tickets per draw must be greater than 0");
         Gachapon storage gachapon = gachapons[gachaponCount];
         gachapon.name = name;
         gachapon.ticketsPerGacha = ticketsPerGacha;
@@ -436,61 +436,42 @@ contract EdenGachapon is
     }
 
     function stakeAndSetupOperator() external onlyRole(ADMIN_ROLE) {
-        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(
-            address(this)
-        );
+        uint256 stakingTokenBalance = IERC20(gachaponSettings.stakingToken).balanceOf(address(this));
         require(stakingTokenBalance > 0, "No staking token balance");
-        // approve staking token to rewardVault
-        IERC20(stakingToken).approve(rewardVault, stakingTokenBalance);
 
-        // stake token into rewardVault
-        IRewardVault(rewardVault).stake(stakingTokenBalance);
+        // Approve staking token to rewardVault
+        IERC20(gachaponSettings.stakingToken).approve(gachaponSettings.rewardVault, stakingTokenBalance);
 
-        // set operatorAddress
-        IRewardVault(rewardVault).setOperator(operatorAddress);
+        // Stake token into rewardVault
+        IRewardVault(gachaponSettings.rewardVault).stake(stakingTokenBalance);
+
+        // Set operatorAddress
+        IRewardVault(gachaponSettings.rewardVault).setOperator(gachaponSettings.lBGTOperator);
     }
 
     function unStake() external onlyRole(ADMIN_ROLE) {
-        uint256 balance = IRewardVault(rewardVault).balanceOf(address(this));
+        uint256 balance = IRewardVault(gachaponSettings.rewardVault).balanceOf(address(this));
         require(balance > 0, "No balance to unstake");
 
-        IRewardVault(rewardVault).withdraw(balance);
+        // 从 rewardVault 提取所有质押的代币
+        IRewardVault(gachaponSettings.rewardVault).withdraw(balance);
 
-        // get stakingToken balance
-        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(
-            address(this)
-        );
+        // 获取当前合约的 stakingToken 余额
+        uint256 stakingTokenBalance = IERC20(gachaponSettings.stakingToken).balanceOf(address(this));
+        require(stakingTokenBalance > 0, "No staking token balance available");
 
-        // transfer stakingToken to msg.sender
-        bool success = IERC20(stakingToken).transfer(
-            msg.sender,
-            stakingTokenBalance
-        );
-        require(success, "Staking token transfer failed");
+        // 将 stakingToken 转移给调用者
+        IERC20(gachaponSettings.stakingToken).safeTransfer(msg.sender, stakingTokenBalance);
     }
 
     // TODO: 添加激励
     function _addRewardVaultIncentive(uint256 amount) internal {
         // 添加incentive
         IRewardVault(rewardVault).addIncentive(
-            entryFeeConfig.token,
+            gachaponSettings.paymentToken,
             amount,
             incentiveRate
         );
-    }
-
-    // withdraw当前合约的token
-    function withdrawToken(
-        address token,
-        uint256 amount
-    ) external onlyRole(ADMIN_ROLE) {
-        require(token != address(0), "Invalid token address");
-        require(amount > 0, "Amount must be greater than 0");
-
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        require(balance >= amount, "Insufficient token balance");
-
-        IERC20(token).safeTransfer(msg.sender, amount);
     }
 
     // UUPS升级相关
