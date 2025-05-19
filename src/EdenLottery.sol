@@ -468,6 +468,32 @@ contract EdenLottery is
         require(success, "Staking token transfer failed");
     }
 
+    function setLotteryConfig(
+        LotteryConfig memory _lotteryConfig
+    ) external onlyRole(ADMIN_ROLE) {
+        require(
+            _lotteryConfig.rewardToken != address(0),
+            "Invalid reward token"
+        );
+        require(
+            _lotteryConfig.refundLossRate > 0,
+            "Refund loss rate must be greater than 0"
+        );
+        require(
+            _lotteryConfig.minPoolBalance > 0,
+            "Min pool balance must be greater than 0"
+        );
+        require(
+            _lotteryConfig.randomGenerator != address(0),
+            "Invalid generator address"
+        );
+
+        minPoolBalance = _lotteryConfig.minPoolBalance;
+        randomGenerator = IRandomGenerator(_lotteryConfig.randomGenerator);
+        refundLossRate = _lotteryConfig.refundLossRate;
+        rewardToken = _lotteryConfig.rewardToken;
+    }
+
     // TODO: 添加激励
     function _addRewardVaultIncentive(uint256 amount) internal {
         // 添加incentive
