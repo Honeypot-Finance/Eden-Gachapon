@@ -1,0 +1,500 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "./interfaces/IBeraPawForge.sol";
+import "./interfaces/IRewardVault.sol";
+
+interface IRandomGenerator {
+    function getRandomNumber() external returns (uint256);
+}
+
+contract EdenGachapon is
+    Initializable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
+{
+    using SafeERC20 for IERC20;
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+
+    uint256 public constant PRECISION = 10000; // 0.01% 精度
+
+    struct Prize {
+        string name; // 奖品名称
+        address feeAddress; // 奖品接收地址
+        uint256 prizeValue; // 奖品价值，LBGT计价
+        uint256 rate; // 奖品中间率 0-10000，0.01% 精度
+        uint256 number; // 奖品数量
+    }
+
+    struct Gachapon {
+        string name; // 扭蛋机名称
+        uint256 ticketsPerGacha; // 每次抽奖消耗的抽奖券数量
+        bool isActive; // 扭蛋机是否有效
+        uint256 prizeCount; // 奖品种类数量
+        mapping(uint256 => Prize) prizes; // 奖品 ID 到奖品的映射
+    }
+
+    struct GachaponSettings {
+        // GachaponConfig
+        address rewardToken; // 奖励代币地址，目前默认是LBGT
+        IRandomGenerator randomGenerator; // 随机数生成策略合约
+
+        // EntryFeeConfig
+        address paymentToken; // 抽奖券支付的代币（目前暂定是wbera）
+        uint256 pricePerTicket; // 抽奖券价格，默认是 0.69*(10**18) wBERA
+
+        // RewardConfig
+        address lBGTOperator; // berapaw的operator地址
+        address rewardVault; // rewardVault地址
+        address stakingToken; // stakingToken地址
+        uint256 incentiveRate; // 贿赂率，使用多少个wbera用来激励BGT，比如 0.9*(10**18) 代表 0.9 Bera Per BGT
+    }
+
+    // 状态变量
+    mapping(uint256 => Gachapon) public gachapons; // 扭蛋机 ID 到扭蛋机的映射
+    mapping(address => uint256) public tickets; // 用户抽奖券数量
+
+    uint256 public gachaponCount;
+    GachaponSettings public gachaponSettings; // Gachapon配置
+
+    // 事件
+    event GachaponCreated(uint256 indexed gachaponId, string name);
+
+    event PrizeAdded(
+        uint256 indexed gachaponId,
+        uint256 indexed prizeId,
+        string name,
+        uint256 prizeValue,
+        uint256 number,
+        uint256 rate
+    );
+
+    event PrizeRemoved(uint256 indexed gachaponId, uint256 indexed prizeId);
+
+    event PrizeUpdated(
+        uint256 indexed gachaponId,
+        uint256 indexed prizeId,
+        string name,
+        uint256 prizeValue,
+        uint256 number,
+        uint256 rate
+    );
+
+    event GachaResult(
+        address indexed user,
+        uint256 indexed gachaponId,
+        uint256 prizeId,
+        uint256 amount
+    );
+
+    event TicketBought(address indexed user, uint256 numTickets, IERC20 paymentToken, uint256 paymentAmount);
+    event TicketUsed(address indexed user, uint256 gachaponID, uint256 numTickets);
+    
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
+    GachaponSettings memory _gachaponSettings
+) public initializer {
+    __AccessControl_init();
+    __Pausable_init();
+    __UUPSUpgradeable_init();
+
+    _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    _grantRole(ADMIN_ROLE, msg.sender);
+    _grantRole(UPGRADER_ROLE, msg.sender);
+
+    // 设置 GachaponSettings
+    require(_gachaponSettings.paymentToken != address(0), "Invalid payment token");
+    require(_gachaponSettings.pricePerTicket > 0, "Price per ticket must be greater than 0");
+    require(_gachaponSettings.incentiveRate > 0, "Incentive rate must be greater than 0");
+    require(_gachaponSettings.rewardToken != address(0), "Invalid reward token");
+    require(address(_gachaponSettings.randomGenerator) != address(0), "Invalid random generator");
+    require(_gachaponSettings.lBGTOperator != address(0), "Invalid operator address");
+    require(_gachaponSettings.rewardVault != address(0), "Invalid reward vault");
+    require(_gachaponSettings.stakingToken != address(0), "Invalid staking token");
+
+    gachaponSettings = _gachaponSettings;
+}
+
+    // ======user 相关函数 start======
+    // 购买奖券
+    function buyTicket(uint256 numTickets) external nonReentrant whenNotPaused {
+    require(numTickets > 0, "Number of tickets must be greater than 0");
+
+    uint256 totalCost = numTickets * gachaponSettings.pricePerTicket;
+
+    // 转移支付代币作为抽奖费用
+    IERC20(gachaponSettings.paymentToken).safeTransferFrom(
+        msg.sender,
+        address(this),
+        totalCost
+    );
+
+    // 添加奖励池激励
+    _addRewardVaultIncentive(totalCost);
+
+    // 增加用户的抽奖券数量
+    tickets[msg.sender] += numTickets;
+
+    emit TicketBought(msg.sender, numTickets, IERC20(gachaponSettings.paymentToken), totalCost);
+}
+
+    // 查询当前用户抽奖券数量
+    function getTickets(address user) external view returns (uint256) {
+        return tickets[user];
+    }
+
+    // 扭蛋
+    function gacha(uint256 gachaponId) external nonReentrant whenNotPaused {
+        require(gachaponId < gachaponCount, "Invalid gachapon ID");
+
+        Gachapon storage gachapon = gachapons[gachaponId];
+
+        require(gachapon.isActive, "Gachapon is not active");
+        require(
+            tickets[msg.sender] >= gachapon.ticketsPerGacha,
+            "Not enough tickets"
+        );
+
+        tickets[msg.sender] -= gachapon.ticketsPerGacha;
+
+        uint256 randomNumber = gachaponSettings.randomGenerator.getRandomNumber();
+        uint256 prizeId = _selectPrize(gachapon, randomNumber);
+
+        Prize storage prize = gachapon.prizes[prizeId];
+
+        // 抽奖前先从 RV 里 claim LBGT
+        _claimLBGT();
+
+        // 抽中 LBGT 发给用户，抽中其他奖品发给供应商
+        if (prizeId == 0) {
+            IERC20(gachaponSettings.rewardToken).safeTransfer(
+                msg.sender,
+                prize.prizeValue
+            );
+        } else {
+            require(prize.number > 0, "Prize out of stock");
+
+            prize.number--;
+            if (prize.number == 0) {
+                // 某个奖品库存耗尽，更新 LBGT 返奖金额
+                _updatePrizeLBGT(gachaponId);
+            }
+            IERC20(gachaponSettings.rewardToken).safeTransfer(
+                prize.feeAddress,
+                prize.prizeValue
+            );
+        }
+        emit GachaResult(
+            msg.sender,
+            gachaponId,
+            prizeId,
+            prize.prizeValue
+        );
+    }
+
+    // 内部函数：选择奖品
+    function _selectPrize(
+        Gachapon storage gachapon,
+        uint256 randomNumber
+    ) internal view returns (uint256) {
+        uint256 boundedRandom = randomNumber % PRECISION;
+        uint256 accumulatedRate = 0;
+
+        // 遍历除 LBGT 外所有奖品，不中奖返回 0（LBGT 奖品）
+        for (uint256 i = 1; i < gachapon.prizeCount; i++) {
+            Prize storage prize = gachapon.prizes[i];
+            if (prize.number==0) continue;
+
+            accumulatedRate += prize.rate;
+            if (boundedRandom < accumulatedRate) {
+                return i;
+            }
+        }
+
+        return 0; // 抽中 LBGT
+    }
+
+    // 查询抽中 LBGT 的返奖金额
+    function prizeLBGT(uint256 gachaponID) external view returns (uint256) {
+        return gachapons[gachaponID].prizes[0].prizeValue;
+    }
+
+    function _updatePrizeLBGT(uint256 gachaponID) internal returns (uint256) {
+        //LBGT 返奖金额 = (entryFeeAmount*票数 - ∑中奖率*奖品价格)/(1- ∑中奖率)
+        Gachapon storage gachapon = gachapons[gachaponID];
+        uint256 totalRate = 0;
+        uint256 totalPrizeValueWeighted = 0;
+
+        // 遍历除 LBGT 外的所有奖品，计算总中奖率和加权奖品价值
+        for (uint256 i = 1; i < gachapon.prizeCount; i++) {
+            Prize storage prize = gachapon.prizes[i];
+            if (prize.number == 0) continue; // 跳过库存为 0 的奖品
+
+            totalRate += prize.rate;
+            totalPrizeValueWeighted += (prize.rate * prize.prizeValue);
+        }
+
+        // 检查总中奖率是否超过 PRECISION
+        require(totalRate < PRECISION, "Total prize rate exceeds precision");
+
+        // 计算 LBGT 奖品的返奖金额
+        uint256 totalEntryFee = gachapon.ticketsPerGacha * gachaponSettings.pricePerTicket * PRECISION;
+        require(totalEntryFee > totalPrizeValueWeighted, "LBGT not enough for buying Prizes");
+
+        uint256 prizeLBGTAmount = (totalEntryFee - totalPrizeValueWeighted) / (PRECISION - totalRate) / 10 * 10; // 向下取整
+        
+        gachapon.prizes[0].prizeValue = PrizeLBGTAmount;
+
+        return prizeLBGTAmount;
+    }
+
+    // 使用前需要claimLbgt
+    function _claimLBGT() internal {
+        // claim lbgt
+        IBeraPawForge(operatorAddress).mint(
+            address(this),
+            rewardVault,
+            address(this)
+        );
+    }
+
+    // ======user 相关函数 end======
+
+    // ======admin 相关函数 start======
+    // 创建扭蛋机
+    function createGachapon(
+        string memory name,
+        uint256 ticketsPerGacha
+    ) external onlyRole(ADMIN_ROLE) {
+        require(ticketsPerDraw > 0, "Tickets per draw must be greater than 0");
+        Gachapon storage gachapon = gachapons[gachaponCount];
+        gachapon.name = name;
+        gachapon.ticketsPerGacha = ticketsPerGacha;
+        gachapon.isActive = true;
+        gachapon.prizeCount = 1; // 从1开始，0表示未中奖
+
+        // 初始化 LBGT 返奖，返回票价等量的 LBGT
+        gachapon.prizes[0] = Prize("LBGT", address(0), gachaponSettings.pricePerTicket * ticketsPerGacha, 0, 0);, 
+
+        emit GachaponCreated(
+            gachaponCount,
+            name
+        );
+        gachaponCount++; 
+    }
+
+    // 奖品管理函数
+    function addPrize(
+        uint256 gachaponId,
+        string memory name,
+        address feeAddress,
+        uint256 prizeValue,
+        uint256 number,
+        uint256 rate
+    ) external onlyRole(ADMIN_ROLE) {
+        require(gachaponId < gachaponCount, "Invalid gachapon ID");
+        
+        Gachapon storage gachapon = gachapons[gachaponId];
+        prizeId = gachapon.prizeCount;
+
+        _updatePrize(gachapon, prizeId, name, feeAddress, prizeValue, number, rate);
+        _updatePrizeLBGT(gachaponId);
+    }
+
+    function _updatePrize(
+        storage gachapon,
+        uint256 prizeId,
+        string memory name,
+        address feeAddress,
+        uint256 prizeValue,
+        uint256 number,
+        uint256 rate
+    ) internal {
+        require(prizeId <= gachapon.prizeCount, "Invalid prize ID");
+        require(bytes(name).length > 0, "Prize name cannot be empty");
+        require(number > 0, "Prize number must be greater than 0");
+        require(rate > 0, "Weight must be greater than 0");
+        require(feeAddress != address(0), "Invalid fee address");
+
+        gachapon.prizes[prizeId] = Prize(
+            name,
+            feeAddress,
+            prizeValue,
+            rate,
+            number,
+        );
+        if(prizeId == gachapon.prizeCount) {
+            gachapon.prizeCount++;
+        }
+
+        emit PrizeAdded(
+            gachaponId,
+            gachapon.prizeCount - 1,
+            name,
+            prizeValue,
+            number,
+            rate
+        );
+    }
+
+    function updatePrize(
+        uint256 gachaponId,
+        uint256 prizeId,
+        string memory name,
+        address feeAddress,
+        uint256 prizeValue,
+        uint256 number,
+        uint256 rate
+    ) external onlyRole(ADMIN_ROLE) {
+        require(gachaponId < gachaponCount, "Invalid gachapon ID");
+        
+
+        Gachapon storage gachapon = gachapons[gachaponId];
+        _updatePrize(
+            gachapon,
+            prizeId,
+            name,
+            feeAddress,
+            prizeValue,
+            number,
+            rate
+        );
+        _updateRefundAmount(gachaponId);
+        emit PrizeUpdated(
+            gachaponId,
+            prizeId,
+            name,
+            prizeValue,
+            number,
+            rate
+        );
+    }
+
+    function removePrize(
+        uint256 gachaponId,
+        uint256 prizeId
+    ) external onlyRole(ADMIN_ROLE) {
+        require(gachaponId < gachaponCount, "Invalid gachapon ID");
+        Gachapon storage gachapon = gachapons[gachaponId];
+        require(prizeId < gachapon.prizeCount, "Invalid prize ID");
+
+        gachapon.prizes[prizeId].number = 0;
+        _updatePrizeLBGT(gachaponId);
+
+        emit PrizeRemoved(gachaponId, prizeId);
+    }
+
+    // 管理函数
+    function setRandomGenerator(
+        address _randomGenerator
+    ) external onlyRole(ADMIN_ROLE) {
+        require(_randomGenerator != address(0), "Invalid generator address");
+        address oldGenerator = address(randomGenerator);
+        randomGenerator = IRandomGenerator(_randomGenerator);
+        emit RandomGeneratorUpdated(oldGenerator, _randomGenerator);
+    }
+
+    function setRewardToken(
+        address _rewardToken
+    ) external onlyRole(ADMIN_ROLE) {
+        require(_rewardToken != address(0), "Invalid token address");
+        address oldToken = rewardToken;
+        rewardToken = _rewardToken;
+        emit TokenAddressUpdated(oldToken, _rewardToken);
+    }
+
+    // 紧急函数
+    function emergencyWithdraw(
+        address token,
+        uint256 amount
+    ) external onlyRole(ADMIN_ROLE) {
+        IERC20(token).safeTransfer(msg.sender, amount);
+    }
+
+    function pause() external onlyRole(ADMIN_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        _unpause();
+    }
+
+    function stakeAndSetupOperator() external onlyRole(ADMIN_ROLE) {
+        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(
+            address(this)
+        );
+        require(stakingTokenBalance > 0, "No staking token balance");
+        // approve staking token to rewardVault
+        IERC20(stakingToken).approve(rewardVault, stakingTokenBalance);
+
+        // stake token into rewardVault
+        IRewardVault(rewardVault).stake(stakingTokenBalance);
+
+        // set operatorAddress
+        IRewardVault(rewardVault).setOperator(operatorAddress);
+    }
+
+    function unStake() external onlyRole(ADMIN_ROLE) {
+        uint256 balance = IRewardVault(rewardVault).balanceOf(address(this));
+        require(balance > 0, "No balance to unstake");
+
+        IRewardVault(rewardVault).withdraw(balance);
+
+        // get stakingToken balance
+        uint256 stakingTokenBalance = IERC20(stakingToken).balanceOf(
+            address(this)
+        );
+
+        // transfer stakingToken to msg.sender
+        bool success = IERC20(stakingToken).transfer(
+            msg.sender,
+            stakingTokenBalance
+        );
+        require(success, "Staking token transfer failed");
+    }
+
+    // TODO: 添加激励
+    function _addRewardVaultIncentive(uint256 amount) internal {
+        // 添加incentive
+        IRewardVault(rewardVault).addIncentive(
+            entryFeeConfig.token,
+            amount,
+            incentiveRate
+        );
+    }
+
+    // withdraw当前合约的token
+    function withdrawToken(
+        address token,
+        uint256 amount
+    ) external onlyRole(ADMIN_ROLE) {
+        require(token != address(0), "Invalid token address");
+        require(amount > 0, "Amount must be greater than 0");
+
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        require(balance >= amount, "Insufficient token balance");
+
+        IERC20(token).safeTransfer(msg.sender, amount);
+    }
+
+    // UUPS升级相关
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(UPGRADER_ROLE) {}
+}
