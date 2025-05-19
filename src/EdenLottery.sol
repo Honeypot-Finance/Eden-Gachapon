@@ -39,6 +39,7 @@ contract EdenLottery is
         address rewardToken; // 奖励代币地址 目前默认是LBGT
         uint256 minPoolBalance;
         address randomGenerator; // 随机数生成策略合约
+        uint256 refundLossRate; // 真实退款比例，默认是90%
     }
 
     struct EntryFeeConfig {
@@ -61,6 +62,7 @@ contract EdenLottery is
     EntryFeeConfig public entryFeeConfig;
     address public rewardToken; // 奖励代币地址 目前默认是LBGT
     uint256 public minPoolBalance;
+    uint256 public refundLossRate = 9000; // 真实退款比例，默认是90%
     IRandomGenerator public randomGenerator;
     mapping(address => uint256) public ticketCount; // 用户抽奖券数量
     uint256 public totalTicketCount; // 总抽奖券数量
@@ -130,7 +132,7 @@ contract EdenLottery is
         rewardToken = _lotteryConfig.rewardToken;
         minPoolBalance = _lotteryConfig.minPoolBalance;
         randomGenerator = IRandomGenerator(_lotteryConfig.randomGenerator);
-
+        refundLossRate = _lotteryConfig.refundLossRate;
         // 设置入场费配置
         require(_entryFeeConfig.token != address(0), "Invalid entry fee token");
         require(_entryFeeConfig.amount > 0, "Entry fee must be greater than 0");
@@ -248,7 +250,11 @@ contract EdenLottery is
         // (entry.amount - totalPrizeValue) / loseRate
         uint256 numerator = entryFeeConfig.amount - totalPrizeValue;
 
-        uint256 refundAmount = (numerator * PRECISION) / loseRate;
+        uint256 expectedRefundAmount = (numerator * PRECISION) / loseRate;
+
+        uint256 refundAmount = (expectedRefundAmount * refundLossRate) /
+            PRECISION;
+
         require(refundAmount > 0, "Refund amount must be greater than 0");
         return refundAmount;
     }
