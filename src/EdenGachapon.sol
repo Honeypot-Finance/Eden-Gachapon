@@ -50,27 +50,31 @@ contract EdenGachapon is
         address rewardToken; // 奖励代币地址，目前默认是LBGT
         IRandomGenerator randomGenerator; // 随机数生成策略合约
 
-        // EntryFeeConfig
+        // 抽奖票设置
         address paymentToken; // 抽奖券支付的代币（目前暂定是wbera）
         uint256 pricePerTicket; // 抽奖券价格，默认是 0.69*(10**18) wBERA
 
-        // RewardConfig
+        // RV 相关设置
         address lBGTOperator; // berapaw的operator地址
         address rewardVault; // rewardVault地址
         address stakingToken; // stakingToken地址
         uint256 incentiveRate; // 贿赂率，使用多少个wbera用来激励BGT，比如 0.9*(10**18) 代表 0.9 Bera Per BGT
     }
 
-    // 状态变量
+    // Gachapons 全局配置
+    GachaponSettings public gachaponSettings;
+
+    // 抽奖机
     mapping(uint256 => Gachapon) public gachapons; // 扭蛋机 ID 到扭蛋机的映射
-    mapping(address => uint256) public tickets; // 用户抽奖券数量
-
     uint256 public gachaponCount;
-    GachaponSettings public gachaponSettings; // Gachapon配置
 
-    // 事件
+    // 用户抽奖券余额
+    mapping(address => uint256) public tickets; // 用户抽奖券数量
+    
+    // 创建抽奖机
     event GachaponCreated(uint256 indexed gachaponId, string name);
 
+    // 添加奖品
     event PrizeAdded(
         uint256 indexed gachaponId,
         uint256 indexed prizeId,
@@ -80,8 +84,10 @@ contract EdenGachapon is
         uint256 rate
     );
 
+    // 移除奖品
     event PrizeRemoved(uint256 indexed gachaponId, uint256 indexed prizeId);
 
+    // 更新奖品参数
     event PrizeUpdated(
         uint256 indexed gachaponId,
         uint256 indexed prizeId,
@@ -91,16 +97,17 @@ contract EdenGachapon is
         uint256 rate
     );
 
+    // 扭蛋结果
     event GachaResult(
         address indexed user,
         uint256 indexed gachaponId,
         uint256 prizeId,
-        uint256 amount
+        uint256 lBGTAmount,
+        uint256 numTickets
     );
 
+    // 买票
     event TicketBought(address indexed user, uint256 numTickets, IERC20 paymentToken, uint256 paymentAmount);
-    event TicketUsed(address indexed user, uint256 gachaponID, uint256 numTickets);
-    
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -108,51 +115,51 @@ contract EdenGachapon is
     }
 
     function initialize(
-    GachaponSettings memory _gachaponSettings
-) public initializer {
-    __AccessControl_init();
-    __Pausable_init();
-    __UUPSUpgradeable_init();
+        GachaponSettings memory _gachaponSettings
+    ) public initializer {
+        __AccessControl_init();
+        __Pausable_init();
+        __UUPSUpgradeable_init();
 
-    _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    _grantRole(ADMIN_ROLE, msg.sender);
-    _grantRole(UPGRADER_ROLE, msg.sender);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
+        _grantRole(UPGRADER_ROLE, msg.sender);
 
-    // 设置 GachaponSettings
-    require(_gachaponSettings.paymentToken != address(0), "Invalid payment token");
-    require(_gachaponSettings.pricePerTicket > 0, "Price per ticket must be greater than 0");
-    require(_gachaponSettings.incentiveRate > 0, "Incentive rate must be greater than 0");
-    require(_gachaponSettings.rewardToken != address(0), "Invalid reward token");
-    require(address(_gachaponSettings.randomGenerator) != address(0), "Invalid random generator");
-    require(_gachaponSettings.lBGTOperator != address(0), "Invalid operator address");
-    require(_gachaponSettings.rewardVault != address(0), "Invalid reward vault");
-    require(_gachaponSettings.stakingToken != address(0), "Invalid staking token");
+        // 设置 GachaponSettings
+        require(_gachaponSettings.paymentToken != address(0), "Invalid payment token");
+        require(_gachaponSettings.pricePerTicket > 0, "Price per ticket must be greater than 0");
+        require(_gachaponSettings.incentiveRate > 0, "Incentive rate must be greater than 0");
+        require(_gachaponSettings.rewardToken != address(0), "Invalid reward token");
+        require(address(_gachaponSettings.randomGenerator) != address(0), "Invalid random generator");
+        require(_gachaponSettings.lBGTOperator != address(0), "Invalid operator address");
+        require(_gachaponSettings.rewardVault != address(0), "Invalid reward vault");
+        require(_gachaponSettings.stakingToken != address(0), "Invalid staking token");
 
-    gachaponSettings = _gachaponSettings;
-}
+        gachaponSettings = _gachaponSettings;
+    }
 
     // ======user 相关函数 start======
     // 购买奖券
     function buyTicket(uint256 numTickets) external nonReentrant whenNotPaused {
-    require(numTickets > 0, "Number of tickets must be greater than 0");
+        require(numTickets > 0, "Number of tickets must be greater than 0");
 
-    uint256 totalCost = numTickets * gachaponSettings.pricePerTicket;
+        uint256 totalCost = numTickets * gachaponSettings.pricePerTicket;
 
-    // 转移支付代币作为抽奖费用
-    IERC20(gachaponSettings.paymentToken).safeTransferFrom(
-        msg.sender,
-        address(this),
-        totalCost
-    );
+        // 转移支付代币作为抽奖费用
+        IERC20(gachaponSettings.paymentToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            totalCost
+        );
 
-    // 添加奖励池激励
-    _addRewardVaultIncentive(totalCost);
+        // 添加奖励池激励
+        _addRewardVaultIncentive(totalCost);
 
-    // 增加用户的抽奖券数量
-    tickets[msg.sender] += numTickets;
+        // 增加用户的抽奖券数量
+        tickets[msg.sender] += numTickets;
 
-    emit TicketBought(msg.sender, numTickets, IERC20(gachaponSettings.paymentToken), totalCost);
-}
+        emit TicketBought(msg.sender, numTickets, IERC20(gachaponSettings.paymentToken), totalCost);
+    }
 
     // 查询当前用户抽奖券数量
     function getTickets(address user) external view returns (uint256) {
@@ -204,7 +211,8 @@ contract EdenGachapon is
             msg.sender,
             gachaponId,
             prizeId,
-            prize.prizeValue
+            prize.prizeValue,
+            gachapon.ticketsPerGacha
         );
     }
 
@@ -216,7 +224,7 @@ contract EdenGachapon is
         uint256 boundedRandom = randomNumber % PRECISION;
         uint256 accumulatedRate = 0;
 
-        // 遍历除 LBGT 外所有奖品，不中奖返回 0（LBGT 奖品）
+        // 遍历除 LBGT 外所有奖品，不中奖返回 0（LBGT 返奖）
         for (uint256 i = 1; i < gachapon.prizeCount; i++) {
             Prize storage prize = gachapon.prizes[i];
             if (prize.number==0) continue;
@@ -230,11 +238,12 @@ contract EdenGachapon is
         return 0; // 抽中 LBGT
     }
 
-    // 查询抽中 LBGT 的返奖金额
+    // 查询抽中 LBGT 的返奖金额，每台扭蛋机的 LBGT 返奖金额不一样
     function prizeLBGT(uint256 gachaponID) external view returns (uint256) {
         return gachapons[gachaponID].prizes[0].prizeValue;
     }
 
+    // 更新 LBGT 返奖金额
     function _updatePrizeLBGT(uint256 gachaponID) internal returns (uint256) {
         //LBGT 返奖金额 = (entryFeeAmount*票数 - ∑中奖率*奖品价格)/(1- ∑中奖率)
         Gachapon storage gachapon = gachapons[gachaponID];
@@ -255,11 +264,13 @@ contract EdenGachapon is
 
         // 计算 LBGT 奖品的返奖金额
         uint256 totalEntryFee = gachapon.ticketsPerGacha * gachaponSettings.pricePerTicket * PRECISION;
-        require(totalEntryFee > totalPrizeValueWeighted, "LBGT not enough for buying Prizes");
-
-        uint256 prizeLBGTAmount = (totalEntryFee - totalPrizeValueWeighted) / (PRECISION - totalRate) / 10 * 10; // 向下取整
         
-        gachapon.prizes[0].prizeValue = PrizeLBGTAmount;
+        // 检查总抽奖费用是否大于加权奖品价值，如果不满足条件，LBGT 返奖金额会是负数，这意味着奖池不够维持这个奖品清单的开支
+        require(totalEntryFee > totalPrizeValueWeighted, "LBGT not enough for paying Prizes");
+
+        uint256 prizeLBGTAmount = (totalEntryFee - totalPrizeValueWeighted) / (PRECISION - totalRate) / 10 * 10; // 最后做一个向下取整
+        
+        gachapon.prizes[0].prizeValue = prizeLBGTAmount;
 
         return prizeLBGTAmount;
     }
