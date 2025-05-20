@@ -278,9 +278,9 @@ contract EdenGachapon is
     // 使用前需要claimLbgt
     function _claimLBGT() internal {
         // claim lbgt
-        IBeraPawForge(operatorAddress).mint(
+        IBeraPawForge(gachaponSettings.lBGTOperator).mint(
             address(this),
-            rewardVault,
+            gachaponSettings.rewardVault,
             address(this)
         );
     }
@@ -312,24 +312,23 @@ contract EdenGachapon is
 
     // 奖品管理函数
     function addPrize(
-        uint256 gachaponId,
+        uint256 gachaponID,
         string memory name,
         address feeAddress,
         uint256 prizeValue,
         uint256 number,
         uint256 rate
     ) external onlyRole(ADMIN_ROLE) {
-        require(gachaponId < gachaponCount, "Invalid gachapon ID");
+        require(gachaponID < gachaponCount, "Invalid gachapon ID");
         
-        Gachapon storage gachapon = gachapons[gachaponId];
-        uint256 prizeId = gachapon.prizeCount;
+        uint256 prizeId = gachapons[gachaponID].prizeCount;
 
-        _updatePrize(gachapon, prizeId, name, feeAddress, prizeValue, number, rate);
-        _updatePrizeLBGT(gachaponId);
+        _updatePrize(gachaponID, prizeId, name, feeAddress, prizeValue, number, rate);
+        _updatePrizeLBGT(gachaponID);
     }
 
     function _updatePrize(
-        Gachapon storage gachapon,
+        uint256 gachaponID,
         uint256 prizeId,
         string memory name,
         address feeAddress,
@@ -337,6 +336,8 @@ contract EdenGachapon is
         uint256 number,
         uint256 rate
     ) internal {
+        Gachapon storage gachapon = gachapons[gachaponID];
+
         require(prizeId <= gachapon.prizeCount, "Invalid prize ID");
         require(bytes(name).length > 0, "Prize name cannot be empty");
         require(number > 0, "Prize number must be greater than 0");
@@ -355,7 +356,7 @@ contract EdenGachapon is
         }
 
         emit PrizeAdded(
-            gachaponId,
+            gachaponID,
             gachapon.prizeCount - 1,
             name,
             prizeValue,
@@ -365,7 +366,7 @@ contract EdenGachapon is
     }
 
     function updatePrize(
-        uint256 gachaponId,
+        uint256 gachaponID,
         uint256 prizeId,
         string memory name,
         address feeAddress,
@@ -373,12 +374,10 @@ contract EdenGachapon is
         uint256 number,
         uint256 rate
     ) external onlyRole(ADMIN_ROLE) {
-        require(gachaponId < gachaponCount, "Invalid gachapon ID");
-        
+        require(gachaponID < gachaponCount, "Invalid gachapon ID");
 
-        Gachapon storage gachapon = gachapons[gachaponId];
         _updatePrize(
-            gachapon,
+            gachaponID,
             prizeId,
             name,
             feeAddress,
@@ -386,9 +385,9 @@ contract EdenGachapon is
             number,
             rate
         );
-        _updateRefundAmount(gachaponId);
+        _updatePrizeLBGT(gachaponID);
         emit PrizeUpdated(
-            gachaponId,
+            gachaponID,
             prizeId,
             name,
             prizeValue,
@@ -416,18 +415,16 @@ contract EdenGachapon is
         address _randomGenerator
     ) external onlyRole(ADMIN_ROLE) {
         require(_randomGenerator != address(0), "Invalid generator address");
-        address oldGenerator = address(randomGenerator);
-        randomGenerator = IRandomGenerator(_randomGenerator);
-        emit RandomGeneratorUpdated(oldGenerator, _randomGenerator);
+        address oldGenerator = address(gachaponSettings.randomGenerator);
+        gachaponSettings.randomGenerator = IRandomGenerator(_randomGenerator);
     }
 
     function setRewardToken(
         address _rewardToken
     ) external onlyRole(ADMIN_ROLE) {
         require(_rewardToken != address(0), "Invalid token address");
-        address oldToken = rewardToken;
-        rewardToken = _rewardToken;
-        emit TokenAddressUpdated(oldToken, _rewardToken);
+        address oldToken = gachaponSettings.rewardToken;
+        gachaponSettings.rewardToken = _rewardToken;
     }
 
     // 紧急函数
@@ -478,10 +475,10 @@ contract EdenGachapon is
     // TODO: 添加激励
     function _addRewardVaultIncentive(uint256 amount) internal {
         // 添加incentive
-        IRewardVault(rewardVault).addIncentive(
+        IRewardVault(gachaponSettings.rewardVault).addIncentive(
             gachaponSettings.paymentToken,
             amount,
-            incentiveRate
+            gachaponSettings.incentiveRate
         );
     }
 
