@@ -301,7 +301,7 @@ contract EdenGachapon is
         gachapon.prizeCount = 1; // 从1开始，0表示未中奖
 
         // 初始化 LBGT 返奖，返回票价等量的 LBGT
-        gachapon.prizes[0] = Prize("LBGT", address(0), gachaponSettings.pricePerTicket * ticketsPerGacha, 0, 0);, 
+        gachapon.prizes[0] = Prize("LBGT", address(0), gachaponSettings.pricePerTicket * ticketsPerGacha, 0, 0);
 
         emit GachaponCreated(
             gachaponCount,
@@ -322,14 +322,14 @@ contract EdenGachapon is
         require(gachaponId < gachaponCount, "Invalid gachapon ID");
         
         Gachapon storage gachapon = gachapons[gachaponId];
-        prizeId = gachapon.prizeCount;
+        uint256 prizeId = gachapon.prizeCount;
 
         _updatePrize(gachapon, prizeId, name, feeAddress, prizeValue, number, rate);
         _updatePrizeLBGT(gachaponId);
     }
 
     function _updatePrize(
-        storage gachapon,
+        Gachapon storage gachapon,
         uint256 prizeId,
         string memory name,
         address feeAddress,
@@ -348,7 +348,7 @@ contract EdenGachapon is
             feeAddress,
             prizeValue,
             rate,
-            number,
+            number
         );
         if(prizeId == gachapon.prizeCount) {
             gachapon.prizeCount++;
