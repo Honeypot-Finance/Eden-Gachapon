@@ -1,2 +1,2 @@
-# Eden-POL-Design
+# Eden Gachapon
 ## Hello world
