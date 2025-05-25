@@ -10,6 +10,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/IBeraPawForge.sol";
 import "./interfaces/IRewardVault.sol";
+import "./interfaces/IIncentiveManager.sol";
 
 interface IRandomGenerator {
     function getRandomNumber() external returns (uint256);
@@ -59,6 +60,9 @@ contract EdenGachapon is
         address rewardVault; // rewardVault地址
         address stakingToken; // stakingToken地址
         uint256 incentiveRate; // 贿赂率，使用多少个wbera用来激励BGT，比如 0.9*(10**18) 代表 0.9 Bera Per BGT
+
+        // 激励manager
+        address incentiveManager; // 激励manager地址
     }
 
     // Gachapons 全局配置
@@ -134,26 +138,49 @@ contract EdenGachapon is
         require(_gachaponSettings.lBGTOperator != address(0), "Invalid operator address");
         require(_gachaponSettings.rewardVault != address(0), "Invalid reward vault");
         require(_gachaponSettings.stakingToken != address(0), "Invalid staking token");
+        require(_gachaponSettings.incentiveManager != address(0), "Invalid incentive manager");
+
+        gachaponSettings = _gachaponSettings;
+    }
+
+    function setGachaponSettings(
+        GachaponSettings memory _gachaponSettings
+    ) public onlyRole(ADMIN_ROLE) { 
+        // 设置 GachaponSettings
+        require(_gachaponSettings.paymentToken != address(0), "Invalid payment token");
+        require(_gachaponSettings.pricePerTicket > 0, "Price per ticket must be greater than 0");
+        require(_gachaponSettings.incentiveRate > 0, "Incentive rate must be greater than 0");
+        require(_gachaponSettings.rewardToken != address(0), "Invalid reward token");
+        require(address(_gachaponSettings.randomGenerator) != address(0), "Invalid random generator");
+        require(_gachaponSettings.lBGTOperator != address(0), "Invalid operator address");
+        require(_gachaponSettings.rewardVault != address(0), "Invalid reward vault");
+        require(_gachaponSettings.stakingToken != address(0), "Invalid staking token");
+        require(_gachaponSettings.incentiveManager != address(0), "Invalid incentive manager");
 
         gachaponSettings = _gachaponSettings;
     }
 
     // ======user 相关函数 start======
-    // 购买奖券
+    // 购买奖券,需要approve给incentiveManager
     function buyTicket(uint256 numTickets) external nonReentrant whenNotPaused {
         require(numTickets > 0, "Number of tickets must be greater than 0");
 
         uint256 totalCost = numTickets * gachaponSettings.pricePerTicket;
 
-        // 转移支付代币作为抽奖费用
+        // 转移抽奖的费用作为激励
         IERC20(gachaponSettings.paymentToken).safeTransferFrom(
             msg.sender,
-            address(this),
+            address(gachaponSettings.incentiveManager),
             totalCost
         );
 
         // 添加奖励池激励
-        _addRewardVaultIncentive(totalCost);
+        IIncentiveManager(gachaponSettings.incentiveManager).addIncentive(
+            gachaponSettings.rewardVault,
+            gachaponSettings.paymentToken,
+            totalCost,
+            gachaponSettings.incentiveRate
+        );
 
         // 增加用户的抽奖券数量
         tickets[msg.sender] += numTickets;
@@ -470,16 +497,6 @@ contract EdenGachapon is
 
         // 将 stakingToken 转移给调用者
         IERC20(gachaponSettings.stakingToken).safeTransfer(msg.sender, stakingTokenBalance);
-    }
-
-    // TODO: 添加激励
-    function _addRewardVaultIncentive(uint256 amount) internal {
-        // 添加incentive
-        IRewardVault(gachaponSettings.rewardVault).addIncentive(
-            gachaponSettings.paymentToken,
-            amount,
-            gachaponSettings.incentiveRate
-        );
     }
 
     // UUPS升级相关
