@@ -170,6 +170,12 @@ contract EdenGachapon is
         // 转移抽奖的费用作为激励
         IERC20(gachaponSettings.paymentToken).safeTransferFrom(
             msg.sender,
+            address(this),
+            totalCost
+        );
+
+        // 转移抽奖的费用给incentiveManager
+        IERC20(gachaponSettings.paymentToken).safeTransfer(
             address(gachaponSettings.incentiveManager),
             totalCost
         );
