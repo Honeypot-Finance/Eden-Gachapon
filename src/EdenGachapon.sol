@@ -10,7 +10,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/IBeraPawForge.sol";
 import "./interfaces/IRewardVault.sol";
-import "./interfaces/IIncentiveManager.sol";
+import "./interfaces/IVaultManager.sol";
 
 interface IRandomGenerator {
     function getRandomNumber() external returns (uint256);
@@ -181,7 +181,7 @@ contract EdenGachapon is
         );
 
         // 添加奖励池激励
-        IIncentiveManager(gachaponSettings.incentiveManager).addIncentive(
+        IVaultManager(gachaponSettings.incentiveManager).addIncentive(
             gachaponSettings.rewardVault,
             gachaponSettings.paymentToken,
             totalCost,

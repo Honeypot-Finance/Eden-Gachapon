@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "../src/interfaces/IVaultManager.sol";
 
 // 模拟代币合约
 contract MockToken is ERC20 {
@@ -149,7 +150,7 @@ contract MockRewardVault is IRewardVault {
 }
 
 // 模拟 IncentiveManager
-contract MockIncentiveManager is IIncentiveManager {
+contract MockIncentiveManager is IVaultManager {
     function addIncentive(
         address rewardVault,
         address token,

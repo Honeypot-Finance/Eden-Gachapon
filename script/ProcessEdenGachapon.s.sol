@@ -37,8 +37,22 @@ contract ProcessEdenGachapon is Script {
 
         // edenGachapon.unStake();
 
+        edenGachapon.setGachaponSettings(
+            EdenGachapon.GachaponSettings({
+                rewardToken: rewardToken,
+                randomGenerator: randomGenerator,
+                paymentToken: paymentToken,
+                pricePerTicket: pricePerTicket,
+                lBGTOperator: lBGTOperator,
+                rewardVault: rewardVault,
+                stakingToken: stakingToken,
+                incentiveRate: incentiveRate,
+                incentiveManager: address(0xbFf63221C88d332352137517A95495f95BaD0D8B)
+            })
+        );
+
         // IERC20(paymentToken).approve(address(edenGachapon), 0.69*10**18);
-        edenGachapon.buyTicket(1);
+        // edenGachapon.buyTicket(1);
 
         vm.stopBroadcast();
     }
