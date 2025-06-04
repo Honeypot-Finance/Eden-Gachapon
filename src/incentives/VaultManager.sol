@@ -26,7 +26,7 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
         _disableInitializers();
     }
 
-    function initialize() public reinitializer(2) {
+    function initialize() public reinitializer(3) {
         // __AccessControl_init();
         // __UUPSUpgradeable_init();
 
@@ -65,6 +65,12 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
             paymentToken,
             amount,
             incentiveRate
+        );
+        
+        // account incentive
+        IRewardVault(rewardVault).accountIncentives(
+            paymentToken,
+            amount
         );
     }
 
