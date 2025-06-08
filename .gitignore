@@ -1,2 +1,5 @@
 # Mac file
 .DS_Store
+
+# Node modules
+lib/
