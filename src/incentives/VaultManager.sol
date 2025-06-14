@@ -26,9 +26,9 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
         _disableInitializers();
     }
 
-    function initialize() public initializer {
-        __AccessControl_init();
-        __UUPSUpgradeable_init();
+    function initialize() public reinitializer(3) {
+        // __AccessControl_init();
+        // __UUPSUpgradeable_init();
 
         // Set deployer as default admin
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -66,7 +66,26 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
             amount,
             incentiveRate
         );
+        
+        // account incentive
+        IRewardVault(rewardVault).accountIncentives(
+            paymentToken,
+            amount
+        );
     }
+
+    function accountIncentive(address rewardVault, address paymentToken, uint256 amount) external onlyRole(INCENTIVE_ADMIN_ROLE){
+        require(rewardVault != address(0), "Invalid reward vault");
+        require(paymentToken != address(0), "Invalid payment token");
+        require(amount > 0, "Invalid amount");
+
+        // account incentive
+        IRewardVault(rewardVault).accountIncentives(
+            paymentToken,
+            amount
+        );
+    }
+
 
     /**
      * @notice Function that should revert when msg.sender is not authorized to upgrade the contract

@@ -31,4 +31,9 @@ interface IRewardVault is IPOLErrors, IStakingRewards {
     /// @notice Withdraw the staked tokens from the vault.
     /// @param amount The amount of tokens to withdraw.
     function withdraw(uint256 amount) external;
+
+    /// @notice Account the incentive tokens to the vault.
+    /// @param token The address of the token to account.
+    /// @param amount The amount of the token to account.
+    function accountIncentives(address token, uint256 amount) external;
 }

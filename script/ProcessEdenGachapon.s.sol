@@ -10,7 +10,7 @@ contract ProcessEdenGachapon is Script {
         vm.startBroadcast();    
 
         // 获取代理合约的 EdenGachapon 实例
-        EdenGachapon edenGachapon = EdenGachapon(address(0x5e1d83147B4C03e6F718853DfF69058071e11b94));
+        EdenGachapon edenGachapon = EdenGachapon(address(0x73C7677A8bC73178aE36aD97C984df79E99A18CE));
 
         // 获取设置
         (
@@ -37,22 +37,27 @@ contract ProcessEdenGachapon is Script {
 
         // edenGachapon.unStake();
 
-        edenGachapon.setGachaponSettings(
-            EdenGachapon.GachaponSettings({
-                rewardToken: rewardToken,
-                randomGenerator: randomGenerator,
-                paymentToken: paymentToken,
-                pricePerTicket: pricePerTicket,
-                lBGTOperator: lBGTOperator,
-                rewardVault: rewardVault,
-                stakingToken: stakingToken,
-                incentiveRate: incentiveRate,
-                incentiveManager: address(0xbFf63221C88d332352137517A95495f95BaD0D8B)
-            })
-        );
+        // edenGachapon.setGachaponSettings(
+        //     EdenGachapon.GachaponSettings({
+        //         rewardToken: rewardToken,
+        //         randomGenerator: randomGenerator,
+        //         paymentToken: paymentToken,
+        //         pricePerTicket: pricePerTicket,
+        //         lBGTOperator: lBGTOperator,
+        //         rewardVault: address(0xc6E20D1CDc93A854ce373AEd93653093DDb12E13),
+        //         stakingToken: address(0x5f77967f5129CF2F294E070284Ff0F0e6F838568),
+        //         incentiveRate: incentiveRate,
+        //         incentiveManager: address(0xbFf63221C88d332352137517A95495f95BaD0D8B)
+        //     })
+        // );
+
+
+        console2.log("tickets:", edenGachapon.getTickets(address(0x73C7677A8bC73178aE36aD97C984df79E99A18CE)));
 
         // IERC20(paymentToken).approve(address(edenGachapon), 0.69*10**18);
         // edenGachapon.buyTicket(1);
+
+        // 启动前，要把stakingtoken存入到eden里面，然后stakeAndSetupOperator
 
         vm.stopBroadcast();
     }

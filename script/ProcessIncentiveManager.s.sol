@@ -10,7 +10,10 @@ contract ProcessIncentiveManager is Script {
         vm.startBroadcast();    
 
         VaultManager vaultManager = VaultManager(address(0xbFf63221C88d332352137517A95495f95BaD0D8B));
-        vaultManager.grantRole(vaultManager.INCENTIVE_ADMIN_ROLE(), address(0x5e1d83147B4C03e6F718853DfF69058071e11b94));
+        vaultManager.grantRole(vaultManager.INCENTIVE_ADMIN_ROLE(), address(0x73C7677A8bC73178aE36aD97C984df79E99A18CE));
+        // vaultManager.accountIncentive(address(0xfB8B5495a83716DAd89944919aA1090a21884ab3), address(0x6969696969696969696969696969696969696969), 0 ether);
+
+
 
         vm.stopBroadcast();
     }
