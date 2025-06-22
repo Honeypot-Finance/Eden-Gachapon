@@ -26,7 +26,7 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
         _disableInitializers();
     }
 
-    function initialize() public reinitializer(3) {
+    function initialize() public reinitializer(5) {
         // __AccessControl_init();
         // __UUPSUpgradeable_init();
 
@@ -57,14 +57,10 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
         uint256 balance = IERC20(paymentToken).balanceOf(address(this));
         require(balance >= amount, "Insufficient balance");
 
-        // Approve incentive tokens
-        IERC20(paymentToken).approve(rewardVault, amount);
-
-        // Add incentive
-        IRewardVault(rewardVault).addIncentive(
-            paymentToken,
-            amount,
-            incentiveRate
+        // transfer paymentToken to rewardVault
+        IERC20(paymentToken).safeTransfer(
+            rewardVault,
+            amount
         );
         
         // account incentive
@@ -83,6 +79,28 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
         IRewardVault(rewardVault).accountIncentives(
             paymentToken,
             amount
+        );
+    }
+
+    function setUpIncentive(address rewardVault, address paymentToken, uint256 amount, uint256 incentiveRate) external onlyRole(INCENTIVE_ADMIN_ROLE){
+        require(rewardVault != address(0), "Invalid reward vault");
+        require(paymentToken != address(0), "Invalid payment token");
+        require(amount > 0, "Invalid amount");
+
+        IERC20(paymentToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            amount
+        );
+
+        // Approve incentive tokens
+        IERC20(paymentToken).approve(rewardVault, amount);
+
+        // Add incentive
+        IRewardVault(rewardVault).addIncentive(
+            paymentToken,
+            amount,
+            incentiveRate
         );
     }
 
