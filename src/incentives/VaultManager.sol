@@ -26,7 +26,7 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
         _disableInitializers();
     }
 
-    function initialize() public reinitializer(5) {
+    function initialize() public reinitializer(6) {
         // __AccessControl_init();
         // __UUPSUpgradeable_init();
 
@@ -102,6 +102,13 @@ contract VaultManager is IVaultManager, AccessControlUpgradeable, UUPSUpgradeabl
             amount,
             incentiveRate
         );
+    }
+
+    function setRewardsDuration(address rewardVault, uint256 _rewardsDuration) external override onlyRole(INCENTIVE_ADMIN_ROLE){
+        require(rewardVault != address(0), "Invalid reward vault");
+        require(_rewardsDuration > 0, "Invalid rewards duration");
+
+        IRewardVault(rewardVault).setRewardsDuration(_rewardsDuration);
     }
 
 
