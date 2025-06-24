@@ -36,4 +36,9 @@ interface IRewardVault is IPOLErrors, IStakingRewards {
     /// @param token The address of the token to account.
     /// @param amount The amount of the token to account.
     function accountIncentives(address token, uint256 amount) external;
+
+       /// @notice Allows the reward duration manager to update the duration of the rewards.
+    /// @dev The duration must be between `MIN_REWARD_DURATION` and `MAX_REWARD_DURATION`.
+    /// @param _rewardsDuration The new duration of the rewards.
+    function setRewardsDuration(uint256 _rewardsDuration) external;
 }
