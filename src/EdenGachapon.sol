@@ -11,6 +11,7 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "./interfaces/IBeraPawForge.sol";
 import "./interfaces/IRewardVault.sol";
 import "./interfaces/IVaultManager.sol";
+import "./base/WETH.sol";
 
 interface IRandomGenerator {
     function getRandomNumber() external returns (uint256);
@@ -113,6 +114,12 @@ contract EdenGachapon is
     // 买票
     event TicketBought(address indexed user, uint256 numTickets, IERC20 paymentToken, uint256 paymentAmount);
 
+    // 关闭扭蛋机
+    event GachaponClosed(uint256 indexed gachaponId);
+
+    // 更新扭蛋机每次抽奖的票数
+    event TicketsPerGachaUpdated(uint256 indexed gachaponId, uint256 ticketsPerGacha);
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -120,10 +127,10 @@ contract EdenGachapon is
 
     function initialize(
         GachaponSettings memory _gachaponSettings
-    ) public initializer {
-        __AccessControl_init();
-        __Pausable_init();
-        __UUPSUpgradeable_init();
+    ) public reinitializer(2) {
+        // __AccessControl_init();
+        // __Pausable_init();
+        // __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
@@ -189,6 +196,37 @@ contract EdenGachapon is
         );
 
         // 增加用户的抽奖券数量
+        tickets[msg.sender] += numTickets;
+
+        emit TicketBought(msg.sender, numTickets, IERC20(gachaponSettings.paymentToken), totalCost);
+    }
+
+    function buyTicketWithNative(uint256 numTickets) external payable nonReentrant whenNotPaused {
+        require(numTickets > 0, "Number of tickets must be greater than 0");
+        require(msg.value > 0, "Must send native tokens");
+
+        uint256 totalCost = numTickets * gachaponSettings.pricePerTicket;
+        require(msg.value == totalCost, "Incorrect native token amount");
+
+        // wrap native token (e.g., ETH to WETH)
+        WETH(payable(gachaponSettings.paymentToken)).deposit{value: totalCost}();
+
+        // send wrapped token to this contract (already here after deposit)
+
+        // send to incentiveManager
+        IERC20(gachaponSettings.paymentToken).safeTransfer(
+            address(gachaponSettings.incentiveManager),
+            totalCost
+        );
+
+        // add incentive
+        IVaultManager(gachaponSettings.incentiveManager).addIncentive(
+            gachaponSettings.rewardVault,
+            gachaponSettings.paymentToken,
+            totalCost,
+            gachaponSettings.incentiveRate
+        );
+
         tickets[msg.sender] += numTickets;
 
         emit TicketBought(msg.sender, numTickets, IERC20(gachaponSettings.paymentToken), totalCost);
@@ -503,6 +541,44 @@ contract EdenGachapon is
 
         // 将 stakingToken 转移给调用者
         IERC20(gachaponSettings.stakingToken).safeTransfer(msg.sender, stakingTokenBalance);
+    }
+
+    /**
+     * @notice 更新扭蛋机每次抽奖的票数
+     * @param gachaponID 扭蛋机ID
+     * @param ticketsPerGacha 每次抽奖的票数
+     */
+    function updateTicketsPerGacha(
+        uint256 gachaponID,
+        uint256 ticketsPerGacha
+    ) external onlyRole(ADMIN_ROLE) {
+        require(gachaponID < gachaponCount, "Invalid gachapon ID");
+        require(gachapons[gachaponID].isActive, "Gachapon is not active");
+        // 需要所有的奖品都用完了
+        for (uint256 i = 1; i < gachapons[gachaponID].prizeCount; i++) {
+            require(
+                gachapons[gachaponID].prizes[i].number == 0,
+                "Prize is not used up"
+            );
+        }
+        // 更新ticketsPerGacha
+        gachapons[gachaponID].ticketsPerGacha = ticketsPerGacha;
+        // 更新LBGT返奖
+        _updatePrizeLBGT(gachaponID);
+
+        emit TicketsPerGachaUpdated(gachaponID, ticketsPerGacha);
+    }
+
+    /**
+     * @notice 关闭扭蛋机
+     * @param gachaponID 扭蛋机ID
+     */
+    function closeGachapon(uint256 gachaponID) external onlyRole(ADMIN_ROLE) {
+        require(gachaponID < gachaponCount, "Invalid gachapon ID");
+        require(gachapons[gachaponID].isActive, "Gachapon is not active");
+        gachapons[gachaponID].isActive = false;
+
+        emit GachaponClosed(gachaponID);
     }
 
     // UUPS升级相关
