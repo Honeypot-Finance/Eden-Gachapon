@@ -127,7 +127,7 @@ contract EdenGachapon is
 
     function initialize(
         GachaponSettings memory _gachaponSettings
-    ) public reinitializer(2) {
+    ) public reinitializer(3) {
         // __AccessControl_init();
         // __Pausable_init();
         // __UUPSUpgradeable_init();
@@ -339,7 +339,7 @@ contract EdenGachapon is
         // 检查总抽奖费用是否大于加权奖品价值，如果不满足条件，LBGT 返奖金额会是负数，这意味着奖池不够维持这个奖品清单的开支
         require(totalEntryFee > totalPrizeValueWeighted, "LBGT not enough for paying Prizes");
 
-        uint256 prizeLBGTAmount = (totalEntryFee - totalPrizeValueWeighted) / (PRECISION - totalRate) / 10 * 10; // 最后做一个向下取整
+        uint256 prizeLBGTAmount = (totalEntryFee - totalPrizeValueWeighted) / (PRECISION - totalRate) / (10**16) * (10**16); // 最后做一个向下取整，只保留小数点后两位
         
         gachapon.prizes[0].prizeValue = prizeLBGTAmount;
 
