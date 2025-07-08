@@ -127,7 +127,7 @@ contract EdenGachapon is
 
     function initialize(
         GachaponSettings memory _gachaponSettings
-    ) public reinitializer(3) {
+    ) public reinitializer(4) {
         // __AccessControl_init();
         // __Pausable_init();
         // __UUPSUpgradeable_init();
@@ -411,7 +411,7 @@ contract EdenGachapon is
 
         require(prizeId <= gachapon.prizeCount, "Invalid prize ID");
         require(bytes(name).length > 0, "Prize name cannot be empty");
-        require(number > 0, "Prize number must be greater than 0");
+        require(number >=0 , "Prize number must be greater than or equal to 0");
         require(rate > 0, "Weight must be greater than 0");
         require(feeAddress != address(0), "Invalid fee address");
 

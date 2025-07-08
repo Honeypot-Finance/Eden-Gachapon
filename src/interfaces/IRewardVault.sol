@@ -41,4 +41,6 @@ interface IRewardVault is IPOLErrors, IStakingRewards {
     /// @dev The duration must be between `MIN_REWARD_DURATION` and `MAX_REWARD_DURATION`.
     /// @param _rewardsDuration The new duration of the rewards.
     function setRewardsDuration(uint256 _rewardsDuration) external;
+
+    function incentives(address token) external view returns (uint256, uint256, uint256, address);
 }
