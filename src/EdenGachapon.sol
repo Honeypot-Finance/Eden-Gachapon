@@ -127,7 +127,7 @@ contract EdenGachapon is
 
     function initialize(
         GachaponSettings memory _gachaponSettings
-    ) public reinitializer(4) {
+    ) public reinitializer(5) {
         // __AccessControl_init();
         // __Pausable_init();
         // __UUPSUpgradeable_init();
@@ -257,7 +257,7 @@ contract EdenGachapon is
         Prize storage prize = gachapon.prizes[prizeId];
 
         // 抽奖前先从 RV 里 claim LBGT
-        _claimLBGT();
+        // _claimLBGT();
 
         // 抽中 LBGT 发给用户，抽中其他奖品发给供应商
         if (prizeId == 0) {
@@ -344,6 +344,10 @@ contract EdenGachapon is
         gachapon.prizes[0].prizeValue = prizeLBGTAmount;
 
         return prizeLBGTAmount;
+    }
+
+    function claimLBGT() external {
+        _claimLBGT();
     }
 
     // 使用前需要claimLbgt
