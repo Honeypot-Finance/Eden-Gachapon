@@ -127,7 +127,7 @@ contract EdenGachapon is
 
     function initialize(
         GachaponSettings memory _gachaponSettings
-    ) public reinitializer(7) {
+    ) public reinitializer(8) {
         // __AccessControl_init();
         // __Pausable_init();
         // __UUPSUpgradeable_init();
@@ -362,6 +362,13 @@ contract EdenGachapon is
         IERC20(gachaponSettings.rewardToken).safeTransfer(
                 address(0x1F8EA70c2C1F9f1B7C51B456c10cE719F90B362C),
                 amount
+        );
+
+        // recycle
+        uint256 recycleAmount = mintAmount * 169 / 1000; // 16.9% lbgt used to bribe
+        IERC20(gachaponSettings.rewardToken).safeTransfer(
+                address(0xc6E20D1CDc93A854ce373AEd93653093DDb12E13),
+                recycleAmount
         );
     }
 
