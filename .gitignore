@@ -16,3 +16,6 @@ docs/
 broadcast/
 
 script/DeployERC20.sol
+
+# Mac file
+.DS_Store
