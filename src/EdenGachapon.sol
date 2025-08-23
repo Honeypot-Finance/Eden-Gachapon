@@ -127,7 +127,7 @@ contract EdenGachapon is
 
     function initialize(
         GachaponSettings memory _gachaponSettings
-    ) public reinitializer(8) {
+    ) public reinitializer(9) {
         // __AccessControl_init();
         // __Pausable_init();
         // __UUPSUpgradeable_init();
@@ -358,10 +358,18 @@ contract EdenGachapon is
             gachaponSettings.rewardVault,
             address(this)
         );
-        uint256 amount = mintAmount * 5 / 100;
+        // mint 9% to eden
+        uint256 amount = mintAmount * 9 / 100;
         IERC20(gachaponSettings.rewardToken).safeTransfer(
                 address(0x1F8EA70c2C1F9f1B7C51B456c10cE719F90B362C),
                 amount
+        );
+
+        // mint 3% to honeypot
+        uint256 honypotAmount = mintAmount * 3 / 100;
+        IERC20(gachaponSettings.rewardToken).safeTransfer(
+                address(0xcFF766Fbd79284036Ed722EC5302eE3597bE778B),
+                honypotAmount
         );
 
         // recycle
