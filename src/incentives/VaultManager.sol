@@ -66,7 +66,6 @@ contract VaultManager is
         require(paymentToken != address(0), "Invalid payment token");
         require(amount > 0, "Invalid amount");
         require(incentiveRate > 0, "Invalid incentive rate");
-
         uint256 balance = IERC20(paymentToken).balanceOf(address(this));
         require(balance >= amount, "Insufficient balance");
 
