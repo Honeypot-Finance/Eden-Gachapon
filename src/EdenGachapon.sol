@@ -127,7 +127,7 @@ contract EdenGachapon is
 
     function initialize(
         GachaponSettings memory _gachaponSettings
-    ) public reinitializer(5) { // ) public initializer {
+    ) public reinitializer(9) {
         // __AccessControl_init();
         // __Pausable_init();
         // __UUPSUpgradeable_init();
@@ -353,10 +353,30 @@ contract EdenGachapon is
     // 使用前需要claimLbgt
     function _claimLBGT() internal {
         // claim lbgt
-        IBeraPawForge(gachaponSettings.lBGTOperator).mint(
+        uint256 mintAmount = IBeraPawForge(gachaponSettings.lBGTOperator).mint(
             address(this),
             gachaponSettings.rewardVault,
             address(this)
+        );
+        // mint 9% to eden
+        uint256 amount = mintAmount * 9 / 100;
+        IERC20(gachaponSettings.rewardToken).safeTransfer(
+                address(0x1F8EA70c2C1F9f1B7C51B456c10cE719F90B362C),
+                amount
+        );
+
+        // mint 3% to honeypot
+        uint256 honypotAmount = mintAmount * 3 / 100;
+        IERC20(gachaponSettings.rewardToken).safeTransfer(
+                address(0xcFF766Fbd79284036Ed722EC5302eE3597bE778B),
+                honypotAmount
+        );
+
+        // recycle
+        uint256 recycleAmount = mintAmount * 169 / 1000; // 16.9% lbgt used to bribe
+        IERC20(gachaponSettings.rewardToken).safeTransfer(
+                address(0xc6E20D1CDc93A854ce373AEd93653093DDb12E13),
+                recycleAmount
         );
     }
 
