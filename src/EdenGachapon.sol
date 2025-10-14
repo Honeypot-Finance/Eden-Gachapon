@@ -373,11 +373,11 @@ contract EdenGachapon is
         );
 
         // recycle
-        uint256 recycleAmount = mintAmount * 169 / 1000; // 16.9% lbgt used to bribe
-        IERC20(gachaponSettings.rewardToken).safeTransfer(
-                address(0xc6E20D1CDc93A854ce373AEd93653093DDb12E13),
-                recycleAmount
-        );
+        // uint256 recycleAmount = mintAmount * 169 / 1000; // 16.9% lbgt used to bribe
+        // IERC20(gachaponSettings.rewardToken).safeTransfer(
+        //         address(0xc6E20D1CDc93A854ce373AEd93653093DDb12E13),
+        //         recycleAmount
+        // );
     }
 
     // ======user 相关函数 end======
