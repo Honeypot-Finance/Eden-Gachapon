@@ -371,8 +371,8 @@ contract EdenGachapon is
         );
         IERC20(iBGTAddress).approve(swapRouter, iBGTRewards);
 
-        // swap 2/100 iBGT to LBGT to this contract for gacha
-        uint256 swapAmount = iBGTRewards * 2 / 100;
+        // swap 1/100 iBGT to LBGT to this contract for gacha
+        uint256 swapAmount = iBGTRewards * 1 / 100;
         IAlgebraRouter.ExactInputParams memory params = IAlgebraRouter.ExactInputParams({
             path: abi.encodePacked(
                 iBGTAddress,
@@ -417,28 +417,27 @@ contract EdenGachapon is
             gachaponSettings.incentiveRate
         );
 
-
-        // mint 2% to eden
-        uint256 amount = iBGTRewards * 2 / 100;
+        // send 6.5% to honeypot
+        uint256 amount = iBGTRewards * 1 / 100;
         IERC20(iBGTAddress).safeTransfer(
                 address(0x1F8EA70c2C1F9f1B7C51B456c10cE719F90B362C),
                 amount
         );
 
-        // mint 1.5% to punk
+        // send 1.5% to punk
         uint256 punkamount = iBGTRewards * 3 / 200;
         IERC20(iBGTAddress).safeTransfer(
                 address(0x8ef3fd2bf7ae8a190e437aa6248d419c34428804),
                 punkamount
         );
 
-        // mint 4.5% to eden
-        uint256 honypotAmount = iBGTRewards * 9 / 200;
+        // send 6.5% to honeypot
+        uint256 honypotAmount = iBGTRewards * 13 / 200;
         IERC20(iBGTAddress).safeTransfer(
                 address(0xcFF766Fbd79284036Ed722EC5302eE3597bE778B),
                 honypotAmount
         );
-        // 4.5% + 1.5% + 2% + 2% + 90% = 100%
+        // 6.5% + 1.5% + 1% + 1% + 90% = 100%
     }
 
     // ======user 相关函数 end======
