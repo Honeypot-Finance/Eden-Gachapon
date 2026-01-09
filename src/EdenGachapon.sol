@@ -352,32 +352,93 @@ contract EdenGachapon is
 
     // 使用前需要claimLbgt
     function _claimLBGT() internal {
-        // claim lbgt
-        uint256 mintAmount = IBeraPawForge(gachaponSettings.lBGTOperator).mint(
-            address(this),
-            gachaponSettings.rewardVault,
+        // hardcoded addresses
+        address infraredAddress = address(0xb71b3DaEA39012Fb0f2B14D2a9C86da9292fC126);
+        address stakingTokenAddress = address(0x5f77967f5129cf2f294e070284ff0f0e6f838568);
+        address iBGTAddress = address(0xac03CABA51e17c86c921E1f6CBFBdC91F8BB2E6b);
+        address swapRouter = address(0xe301e48f77963d3f7dbd2a4796962bd7f3867fb4);
+
+        // check iBGT rewards
+        uint256 iBGTRewards = IInfrared(infraredAddress).externalVaultRewards(
+            stakingTokenAddress,
             address(this)
         );
-        // mint 9% to eden
-        uint256 amount = mintAmount * 9 / 100;
-        IERC20(gachaponSettings.rewardToken).safeTransfer(
+        require(iBGTRewards > 0, "No iBGT rewards to recycle");
+        // claim iBGT rewards
+        IInfrared(infraredAddress).claimExternalVaultRewards(
+            stakingTokenAddress,
+            address(this)
+        );
+        IERC20(iBGTAddress).approve(swapRouter, iBGTRewards);
+
+        // swap 2/100 iBGT to LBGT to this contract for gacha
+        uint256 swapAmount = iBGTRewards * 2 / 100;
+        IAlgebraRouter.ExactInputParams memory params = IAlgebraRouter.ExactInputParams({
+            path: abi.encodePacked(
+                iBGTAddress,
+                address(0), // deployer address 0
+                address(0x6969696969696969696969696969696969696969),
+                address(0), // deployer address 0
+                gachaponSettings.rewardToken
+            ),
+            recipient: address(this),
+            deadline: block.timestamp + 300, // 5 minutes deadline
+            amountIn: swapAmount,
+            amountOutMinimum: swapAmount // at least the same amount back
+        });
+        IAlgebraRouter(swapRouter).exactInput(params);
+        
+        // swap 90/100 iBGT to wBERA for recycling
+        uint256 swap2beraAmount = iBGTRewards * 90 / 100;
+        IAlgebraRouter.ExactInputSingleParams memory swap2beraParams = IAlgebraRouter.ExactInputSingleParams({
+            tokenIn: iBGTAddress,
+            tokenOut: address(0x6969696969696969696969696969696969696969),
+            deployer: address(0), // deployer address 0
+            recipient: address(this),
+            deadline: block.timestamp + 300, // 5 minutes deadline
+            amountIn: swap2beraAmount,
+            amountOutMinimum: swap2beraAmount, // at least the same amount back
+            limitSqrtPrice: 0 // No price limit
+        });
+        IAlgebraRouter(swapRouter).exactInputSingle(swap2beraParams);
+
+        uint256 wBERABalance = IERC20(gachaponSettings.paymentToken).balanceOf(address(this));
+        // 转移抽奖的费用给incentiveManager
+        IERC20(gachaponSettings.paymentToken).safeTransfer(
+            address(gachaponSettings.incentiveManager),
+            wBERABalance
+        );
+
+        // 添加奖励池激励
+        IVaultManager(gachaponSettings.incentiveManager).addIncentive(
+            gachaponSettings.rewardVault,
+            gachaponSettings.paymentToken,
+            wBERABalance,
+            gachaponSettings.incentiveRate
+        );
+
+
+        // mint 2% to eden
+        uint256 amount = iBGTRewards * 2 / 100;
+        IERC20(iBGTAddress).safeTransfer(
                 address(0x1F8EA70c2C1F9f1B7C51B456c10cE719F90B362C),
                 amount
         );
 
-        // mint 3% to honeypot
-        uint256 honypotAmount = mintAmount * 3 / 100;
-        IERC20(gachaponSettings.rewardToken).safeTransfer(
+        // mint 1.5% to punk
+        uint256 punkamount = iBGTRewards * 3 / 200;
+        IERC20(iBGTAddress).safeTransfer(
+                address(0x8ef3fd2bf7ae8a190e437aa6248d419c34428804),
+                punkamount
+        );
+
+        // mint 4.5% to eden
+        uint256 honypotAmount = iBGTRewards * 9 / 200;
+        IERC20(iBGTAddress).safeTransfer(
                 address(0xcFF766Fbd79284036Ed722EC5302eE3597bE778B),
                 honypotAmount
         );
-
-        // recycle
-        // uint256 recycleAmount = mintAmount * 169 / 1000; // 16.9% lbgt used to bribe
-        // IERC20(gachaponSettings.rewardToken).safeTransfer(
-        //         address(0xc6E20D1CDc93A854ce373AEd93653093DDb12E13),
-        //         recycleAmount
-        // );
+        // 4.5% + 1.5% + 2% + 2% + 90% = 100%
     }
 
     // ======user 相关函数 end======
