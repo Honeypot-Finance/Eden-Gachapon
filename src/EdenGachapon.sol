@@ -356,7 +356,7 @@ contract EdenGachapon is
         address infraredAddress = address(0xb71b3DaEA39012Fb0f2B14D2a9C86da9292fC126);
         address stakingTokenAddress = address(0x5f77967f5129cf2f294e070284ff0f0e6f838568);
         address iBGTAddress = address(0xac03CABA51e17c86c921E1f6CBFBdC91F8BB2E6b);
-        address swapRouter = address(0xe301e48f77963d3f7dbd2a4796962bd7f3867fb4);
+        address swapRouter = address(0xFff605964840a5511f595EB970011EcBffa46b39);
 
         // check iBGT rewards
         uint256 iBGTRewards = IInfrared(infraredAddress).externalVaultRewards(
@@ -372,7 +372,7 @@ contract EdenGachapon is
         IERC20(iBGTAddress).approve(swapRouter, iBGTRewards);
 
         // swap 1/100 iBGT to LBGT to this contract for gacha
-        uint256 swapAmount = iBGTRewards * 1 / 100;
+        uint256 swapAmount = iBGTRewards * 3 / 100;
         IAlgebraRouter.ExactInputParams memory params = IAlgebraRouter.ExactInputParams({
             path: abi.encodePacked(
                 iBGTAddress,
@@ -388,8 +388,8 @@ contract EdenGachapon is
         });
         IAlgebraRouter(swapRouter).exactInput(params);
         
-        // swap 90/100 iBGT to wBERA for recycling
-        uint256 swap2beraAmount = iBGTRewards * 90 / 100;
+        // swap 85/100 iBGT to wBERA for recycling
+        uint256 swap2beraAmount = iBGTRewards * 85 / 100;
         IAlgebraRouter.ExactInputSingleParams memory swap2beraParams = IAlgebraRouter.ExactInputSingleParams({
             tokenIn: iBGTAddress,
             tokenOut: address(0x6969696969696969696969696969696969696969),
@@ -417,8 +417,8 @@ contract EdenGachapon is
             gachaponSettings.incentiveRate
         );
 
-        // send 6.5% to honeypot
-        uint256 amount = iBGTRewards * 1 / 100;
+        // send 2% to eden multi-sign
+        uint256 amount = iBGTRewards * 2 / 100;
         IERC20(iBGTAddress).safeTransfer(
                 address(0x1F8EA70c2C1F9f1B7C51B456c10cE719F90B362C),
                 amount
@@ -431,13 +431,13 @@ contract EdenGachapon is
                 punkamount
         );
 
-        // send 6.5% to honeypot
-        uint256 honypotAmount = iBGTRewards * 13 / 200;
+        // send 8.5% to honeypot
+        uint256 honypotAmount = iBGTRewards * 17 / 200;
         IERC20(iBGTAddress).safeTransfer(
                 address(0xcFF766Fbd79284036Ed722EC5302eE3597bE778B),
                 honypotAmount
         );
-        // 6.5% + 1.5% + 1% + 1% + 90% = 100%
+        // 8.5% + 1.5% + 2% + 3% + 85% = 100%
     }
 
     // ======user 相关函数 end======
