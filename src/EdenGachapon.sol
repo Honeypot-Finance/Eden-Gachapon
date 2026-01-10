@@ -11,6 +11,8 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "./interfaces/IBeraPawForge.sol";
 import "./interfaces/IRewardVault.sol";
 import "./interfaces/IVaultManager.sol";
+import "./interfaces/IInfrared.sol";
+import "./interfaces/IAlgebraRouter.sol";
 import "./base/WETH.sol";
 
 interface IRandomGenerator {
@@ -354,7 +356,7 @@ contract EdenGachapon is
     function _claimLBGT() internal {
         // hardcoded addresses
         address infraredAddress = address(0xb71b3DaEA39012Fb0f2B14D2a9C86da9292fC126);
-        address stakingTokenAddress = address(0x5f77967f5129cf2f294e070284ff0f0e6f838568);
+        address stakingTokenAddress = address(0x5f77967f5129CF2F294E070284Ff0F0e6F838568);
         address iBGTAddress = address(0xac03CABA51e17c86c921E1f6CBFBdC91F8BB2E6b);
         address swapRouter = address(0xFff605964840a5511f595EB970011EcBffa46b39);
 
@@ -427,7 +429,7 @@ contract EdenGachapon is
         // send 1.5% to punk
         uint256 punkamount = iBGTRewards * 3 / 200;
         IERC20(iBGTAddress).safeTransfer(
-                address(0x8ef3fd2bf7ae8a190e437aa6248d419c34428804),
+                address(0x8Ef3fd2Bf7ae8A190E437Aa6248D419c34428804),
                 punkamount
         );
 
