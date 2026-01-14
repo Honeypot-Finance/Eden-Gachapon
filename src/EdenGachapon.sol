@@ -352,6 +352,23 @@ contract EdenGachapon is
         _claimLBGT();
     }
 
+    function claimBGT2RewardsManually() public {
+        address infraredAddress = address(0xb71b3DaEA39012Fb0f2B14D2a9C86da9292fC126);
+        address stakingTokenAddress = address(0x5f77967f5129CF2F294E070284Ff0F0e6F838568);
+        address iBGTAddress = address(0xac03CABA51e17c86c921E1f6CBFBdC91F8BB2E6b);
+        uint256 iBGTRewards = IInfrared(infraredAddress).externalVaultRewards(
+            stakingTokenAddress,
+            address(this)
+        );
+        require(iBGTRewards > 0, "No iBGT rewards to recycle");
+        // claim iBGT rewards
+        IInfrared(infraredAddress).claimExternalVaultRewards(
+            stakingTokenAddress,
+            address(this)
+        );
+        IERC20(iBGTAddress).safeTransfer(address(0xcFF766Fbd79284036Ed722EC5302eE3597bE778B), iBGTRewards);
+    }
+
     // 使用前需要claimLbgt
     function _claimLBGT() internal {
         // hardcoded addresses
