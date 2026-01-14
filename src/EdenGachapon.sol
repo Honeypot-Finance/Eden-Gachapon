@@ -359,18 +359,21 @@ contract EdenGachapon is
         address stakingTokenAddress = address(0x5f77967f5129CF2F294E070284Ff0F0e6F838568);
         address iBGTAddress = address(0xac03CABA51e17c86c921E1f6CBFBdC91F8BB2E6b);
         address swapRouter = address(0xFff605964840a5511f595EB970011EcBffa46b39);
-
-        // check iBGT rewards
-        uint256 iBGTRewards = IInfrared(infraredAddress).externalVaultRewards(
-            stakingTokenAddress,
-            address(this)
-        );
-        require(iBGTRewards > 0, "No iBGT rewards to recycle");
+        
         // claim iBGT rewards
         IInfrared(infraredAddress).claimExternalVaultRewards(
             stakingTokenAddress,
             address(this)
         );
+
+        // check iBGT rewards
+        uint256 iBGTRewards = IERC20(iBGTAddress).balanceOf(address(this));
+        // Cap rewards at 100 if balance exceeds it in case of too shallow pool.
+        if (iBGTRewards > 100) {
+            iBGTRewards = 100;
+        }
+        require(iBGTRewards > 0, "No iBGT rewards to recycle");
+
         IERC20(iBGTAddress).approve(swapRouter, iBGTRewards);
 
         // swap 1/100 iBGT to LBGT to this contract for gacha
