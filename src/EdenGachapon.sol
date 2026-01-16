@@ -419,7 +419,7 @@ contract EdenGachapon is
             recipient: address(this),
             deadline: block.timestamp + 300, // 5 minutes deadline
             amountIn: swap2beraAmount,
-            amountOutMinimum: swap2beraAmount, // at least the same amount back
+            amountOutMinimum: swap2beraAmount * 97/100, // at least 97% back
             limitSqrtPrice: 0 // No price limit
         });
         IAlgebraRouter(swapRouter).exactInputSingle(swap2beraParams);
