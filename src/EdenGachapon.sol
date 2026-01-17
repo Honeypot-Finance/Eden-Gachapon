@@ -386,8 +386,8 @@ contract EdenGachapon is
         // check iBGT rewards
         uint256 iBGTRewards = IERC20(iBGTAddress).balanceOf(address(this));
         // Cap rewards at 100 if balance exceeds it in case of too shallow pool.
-        if (iBGTRewards > 100) {
-            iBGTRewards = 100;
+        if (iBGTRewards > 100*(10^18)) {
+            iBGTRewards = 100*(10^18);
         }
         require(iBGTRewards > 0, "No iBGT rewards to recycle");
 
